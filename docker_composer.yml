@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  stream1:
+    image: jrottenberg/ffmpeg:4.4-alpine
+    container_name: stream1
+    restart: always
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      while true; do
+        echo "Starting stream1...";
+        ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
+          -i "rtsp://192.168.0.23:554/live/0/MAIN"
+          -c copy -an -f flv "rtmp://49.50.74.61:6002/live/stream1" || true;
+        echo "Stream1 disconnected. Reconnecting in 5 seconds...";
+        sleep 5;
+      done
+
+  stream2:
+    image: jrottenberg/ffmpeg:4.4-alpine
+    container_name: stream2
+    restart: always
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      while true; do
+        echo "Starting stream2...";
+        ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
+          -i "rtsp://192.168.0.24:554/live/0/MAIN"
+          -c copy -an -f flv "rtmp://49.50.74.61:6002/live/stream2" || true;
+        echo "Stream2 disconnected. Reconnecting in 5 seconds...";
+        sleep 5;
+      done
+
+  stream3:
+    image: jrottenberg/ffmpeg:4.4-alpine
+    container_name: stream3
+    restart: always
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      while true; do
+        echo "Starting stream3...";
+        ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
+          -i "rtsp://192.168.0.25:554/live/0/MAIN"
+          -c copy -an -f flv "rtmp://49.50.74.61:6002/live/stream3" || true;
+        echo "Stream3 disconnected. Reconnecting in 5 seconds...";
+        sleep 5;
+      done
+
+  stream4:
+    image: jrottenberg/ffmpeg:4.4-alpine
+    container_name: stream4
+    restart: always
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      while true; do
+        echo "Starting stream4...";
+        ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
+          -i "rtsp://192.168.0.26:554/live/0/MAIN"
+          -c copy -an -f flv "rtmp://49.50.74.61:6002/live/stream4" || true;
+        echo "Stream4 disconnected. Reconnecting in 5 seconds...";
+        sleep 5;
+      done
