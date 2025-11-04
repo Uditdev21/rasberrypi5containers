@@ -4,4 +4,4 @@ services:
     container_name: stream1
     network_mode: host
     restart: always
-    command: ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1 -i rtsp://192.168.0.23:554/live/0/MAIN -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream1
+    command: ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1 -i rtsp://192.168.0.147:554/live/0/MAIN -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream1
