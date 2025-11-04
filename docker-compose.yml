@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   stream1:
-    image: jrottenberg/ffmpeg:4.4-alpine
+    image: linuxserver/ffmpeg:latest
     container_name: stream1
     restart: always
     entrypoint: ["/bin/sh", "-c"]
@@ -17,7 +15,7 @@ services:
       done
 
   stream2:
-    image: jrottenberg/ffmpeg:4.4-alpine
+    image: linuxserver/ffmpeg:latest
     container_name: stream2
     restart: always
     entrypoint: ["/bin/sh", "-c"]
@@ -32,7 +30,7 @@ services:
       done
 
   stream3:
-    image: jrottenberg/ffmpeg:4.4-alpine
+    image: linuxserver/ffmpeg:latest
     container_name: stream3
     restart: always
     entrypoint: ["/bin/sh", "-c"]
@@ -47,7 +45,7 @@ services:
       done
 
   stream4:
-    image: jrottenberg/ffmpeg:4.4-alpine
+    image: linuxserver/ffmpeg:latest
     container_name: stream4
     restart: always
     entrypoint: ["/bin/sh", "-c"]
