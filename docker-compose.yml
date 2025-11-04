@@ -1,7 +1,7 @@
 services:
-  stream7:
+  stream10:
     image: ghcr.io/linuxserver/ffmpeg:version-6.1-cli
-    container_name: stream7
+    container_name: stream10
     network_mode: host
     restart: always
     entrypoint: ["/bin/sh", "-c"]
@@ -11,9 +11,9 @@ services:
         -i rtsp://192.168.0.147:554/live/0/MAIN
         -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream7
 
-  stream8:
+  stream11:
     image: ghcr.io/linuxserver/ffmpeg:version-6.1-cli
-    container_name: stream8
+    container_name: stream11
     network_mode: host
     restart: always
     entrypoint: ["/bin/sh", "-c"]
@@ -21,12 +21,12 @@ services:
       - >
         ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
         -i rtsp://192.168.0.211:554/live/0/MAIN
-        -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream8
+        -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream11
 
 
-  stream9:
+  stream12:
     image: ghcr.io/linuxserver/ffmpeg:version-6.1-cli
-    container_name: stream9
+    container_name: stream12
     network_mode: host
     restart: always
     entrypoint: ["/bin/sh", "-c"]
@@ -34,4 +34,4 @@ services:
       - >
         ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
         -i rtsp://192.168.0.215:554/live/0/MAIN
-        -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream9
+        -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream12
