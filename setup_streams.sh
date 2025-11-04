@@ -5,8 +5,10 @@
 # Author: Udit Kumar
 # Description:
 #   - Installs Docker & Docker Compose (if not present)
-#   - Starts containers defined in docker-compose.yml
+#   - Stops existing containers if running
+#   - Rebuilds and starts containers from docker-compose.yml
 #   - Ensures auto-start on reboot and reconnection
+#   - Designed for Raspberry Pi (ARM)
 # ==========================================================
 
 set -e
@@ -14,7 +16,7 @@ set -e
 # ----------------------------
 # CONFIGURATION
 # ----------------------------
-PROJECT_DIR="/home/rtsp_streams"   # Change if needed
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 # ----------------------------
@@ -52,16 +54,34 @@ check_compose_file() {
   fi
 }
 
+wait_for_network() {
+  echo "🌐 Waiting for network to be available..."
+  while ! ping -c 1 8.8.8.8 &>/dev/null; do
+    echo "⏳ Network unavailable. Retrying in 5 seconds..."
+    sleep 5
+  done
+  echo "✅ Network is active!"
+}
+
 start_docker_service() {
   echo "🔁 Enabling and starting Docker service..."
   sudo systemctl enable docker
   sudo systemctl start docker
 }
 
-start_containers() {
-  echo "🚀 Starting containers..."
+restart_containers() {
+  echo "🧹 Checking for existing containers..."
   cd "$PROJECT_DIR"
-  docker compose up -d
+
+  if [ "$(docker compose ps -q)" ]; then
+    echo "⚠️  Existing containers detected. Stopping and removing them..."
+    docker compose down --remove-orphans
+  else
+    echo "✅ No existing containers found."
+  fi
+
+  echo "🚀 Rebuilding and starting containers..."
+  docker compose up -d --build
   echo "✅ Containers launched successfully!"
 }
 
@@ -92,6 +112,7 @@ echo "=========================================================="
 
 install_docker
 check_compose_file
+wait_for_network
 start_docker_service
-start_containers
+restart_containers
 show_summary
