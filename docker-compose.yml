@@ -9,8 +9,7 @@ services:
       - >
         ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
         -i rtsp://192.168.1.160:554/live/0/MAIN
-        -c copy -f flv rtmp://49.50.74.61:6002/live/stream7
-
+        -c:v copy -c:a aac -ar 44100 -b:a 128k -f flv rtmp://49.50.74.61:6002/live/stream7
   stream8:
     image: ghcr.io/linuxserver/ffmpeg:version-6.1-cli
     container_name: stream8
@@ -34,4 +33,4 @@ services:
       - >
         ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
         -i rtsp://192.168.1.83:554/live/0/MAIN
-        -c copy -f flv rtmp://49.50.74.61:6002/live/stream9
+        -c:v copy -c:a aac -ar 44100 -b:a 128k -f flv rtmp://49.50.74.61:6002/live/stream9
