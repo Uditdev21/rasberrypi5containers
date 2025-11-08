@@ -9,7 +9,7 @@ services:
       - >
         ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
         -i rtsp://admin:Navya_83350@192.168.1.10:554/stream1
-        -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream1
+        -c:v copy -c:a aac -ar 44100 -b:a 128k -f flv rtmp://49.50.74.61:6002/live/stream1
 
   stream2:
     image: ghcr.io/linuxserver/ffmpeg:version-6.1-cli
@@ -21,7 +21,7 @@ services:
       - >
         ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
         -i rtsp://192.168.1.106:554/live/0/MAIN
-        -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream2
+        -c:v copy -c:a aac -ar 44100 -b:a 128k -f flv rtmp://49.50.74.61:6002/live/stream2
 
 
   stream3:
@@ -34,5 +34,5 @@ services:
       - >
         ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M -use_wallclock_as_timestamps 1
         -i rtsp://192.168.1.202:554/live/0/MAIN
-        -c copy -an -f flv rtmp://49.50.74.61:6002/live/stream3
+        -c:v copy -c:a aac -ar 44100 -b:a 128k -f flv rtmp://49.50.74.61:6002/live/stream3
 
