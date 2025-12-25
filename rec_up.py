@@ -16,7 +16,7 @@ BASE_DIR = "chunks"
 
 UPLOAD_URL = "https://test.dreams.codes/upload"   # <-- change this
 UPLOAD_INTERVAL = 5  # seconds
-API_KEY = "testkey"  # <-- change this to match web.py
+API_KEY = "OP"  # <-- change this to match web.py
 # ==========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
