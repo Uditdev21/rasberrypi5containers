@@ -7,8 +7,8 @@ from pathlib import Path
 # ================= CONFIG =================
 CAMERAS = {
     "cam4": "rtsp://192.168.1.212:554/live/0/MAIN",
-    "cam2": "rtsp://192.168.1.144:554/live/0/MAIN",
-    "cam3": "rtsp://192.168.1.211:554/live/0/MAIN",
+    "cam5": "rtsp://192.168.1.144:554/live/0/MAIN",
+    "cam6": "rtsp://192.168.1.211:554/live/0/MAIN",
 }
 
 CHUNK_DURATION = 60  # seconds
