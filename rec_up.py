@@ -32,18 +32,48 @@ def record_camera(cam_id, rtsp_url):
         temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
         final_file = cam_dir / f"{cam_id}_{ts}.mp4"
 
-        cmd = [
-            "ffmpeg",
-            "-rtsp_transport", "tcp",
-            "-fflags", "+genpts",
-            "-i", rtsp_url,
-            "-t", str(CHUNK_DURATION),
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-f", "mp4",
-            "-y",
-            str(temp_file)
-        ]
+        # -------- FFmpeg command per camera --------
+        if cam_id == "cam1":
+            # ✅ Re-encode HEVC + PCM → H.264 + AAC
+            cmd = [
+                "ffmpeg",
+                "-rtsp_transport", "tcp",
+                "-fflags", "+genpts",
+                "-i", rtsp_url,
+                "-t", str(CHUNK_DURATION),
+
+                # VIDEO
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-profile:v", "baseline",
+                "-pix_fmt", "yuv420p",
+
+                # AUDIO
+                "-c:a", "aac",
+                "-ar", "44100",
+                "-ac", "1",
+                "-b:a", "64k",
+
+                "-movflags", "+faststart",
+                "-f", "mp4",
+                "-y",
+                str(temp_file)
+            ]
+        else:
+            # ✅ cam2 & cam3 → stream copy (NO re-encode)
+            cmd = [
+                "ffmpeg",
+                "-rtsp_transport", "tcp",
+                "-fflags", "+genpts",
+                "-i", rtsp_url,
+                "-t", str(CHUNK_DURATION),
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
+                "-f", "mp4",
+                "-y",
+                str(temp_file)
+            ]
 
         print(f"[REC] {cam_id} → {final_file.name}")
 
@@ -53,7 +83,7 @@ def record_camera(cam_id, rtsp_url):
             stderr=subprocess.DEVNULL
         )
 
-        # Atomic rename → uploader will see ONLY completed files
+        # Atomic rename
         if result.returncode == 0 and temp_file.exists():
             temp_file.rename(final_file)
         else:
@@ -61,6 +91,7 @@ def record_camera(cam_id, rtsp_url):
                 temp_file.unlink()
 
         time.sleep(1)
+
 
 # ================= UPLOADER =================
 def uploader():
