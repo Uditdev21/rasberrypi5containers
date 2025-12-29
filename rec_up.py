@@ -14,9 +14,9 @@ CAMERAS = {
 CHUNK_DURATION = 60  # seconds
 BASE_DIR = "chunks"
 
-UPLOAD_URL = "https://test.dreams.codes/upload"   # <-- change this
+UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"   # <-- change this
 UPLOAD_INTERVAL = 5  # seconds
-API_KEY = "OP"  # <-- change this to match web.py
+API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"  # <-- change this to match web.py
 # ==========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
