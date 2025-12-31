@@ -13,16 +13,16 @@ CAMERAS = {
     "cam10": "rtsp://192.168.1.147:554/live/0/MAIN",
 }
 
-CHUNK_DURATION = 60        # ⏱ time-based recording ONLY (seconds)
-BASE_DIR = "test_chunks"
+CHUNK_DURATION = 60            # ⏱ TIME BASED ONLY
+BASE_DIR = "chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
 UPLOAD_INTERVAL = 5
 API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
 MAX_UPLOAD_WORKERS = 4
-FILE_STABLE_SECONDS = 10  # wait before uploading finished file
-# ==========================================
+FILE_STABLE_SECONDS = 10       # wait before uploading completed files
+# =========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
 
@@ -31,8 +31,11 @@ def record_camera(cam_id, rtsp_url):
     cam_dir = Path(BASE_DIR) / cam_id
     cam_dir.mkdir(parents=True, exist_ok=True)
 
+    restart_delay = 2  # exponential backoff start
+
     while True:
         ts = int(time.time())
+        start_time = time.time()
 
         temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
         final_file = cam_dir / f"{cam_id}_{ts}.mp4"
@@ -40,11 +43,12 @@ def record_camera(cam_id, rtsp_url):
         cmd = [
             "ffmpeg",
             "-rtsp_transport", "tcp",
+            "-stimeout", "5000000",     # 5s RTSP timeout
             "-fflags", "+genpts",
             "-flags", "low_delay",
             "-max_delay", "500000",
             "-i", rtsp_url,
-            "-t", str(CHUNK_DURATION),   # ⏱ ONLY TIME BASED
+            "-t", str(CHUNK_DURATION),  # ⏱ ONLY CONTROL
             "-c:v", "copy",
             "-c:a", "aac",
             "-movflags", "+faststart",
@@ -61,11 +65,21 @@ def record_camera(cam_id, rtsp_url):
             stderr=subprocess.DEVNULL
         )
 
+        elapsed = time.time() - start_time
+
         if result.returncode == 0 and temp_file.exists():
             temp_file.rename(final_file)
         else:
             if temp_file.exists():
                 temp_file.unlink()
+
+        # 🚨 FFmpeg exited too early → camera unstable
+        if elapsed < 5:
+            print(f"[WARN] {cam_id} FFmpeg exited early ({elapsed:.1f}s), retrying in {restart_delay}s")
+            time.sleep(restart_delay)
+            restart_delay = min(restart_delay * 2, 30)
+        else:
+            restart_delay = 2  # reset after healthy run
 
         time.sleep(1)
 
@@ -136,7 +150,7 @@ def main():
         daemon=True
     ).start()
 
-    print(f"✅ Recording (time-based) + Parallel Uploading started ({MAX_UPLOAD_WORKERS} workers)")
+    print(f"✅ Time-based Recording + Parallel Uploading started ({MAX_UPLOAD_WORKERS} workers)")
     while True:
         time.sleep(60)
 
