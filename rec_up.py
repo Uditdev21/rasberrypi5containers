@@ -3,7 +3,7 @@ import subprocess
 import threading
 import requests
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ================= CONFIG =================
 CAMERAS = {
@@ -17,11 +17,10 @@ CHUNK_DURATION = 60  # seconds
 BASE_DIR = "chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
+UPLOAD_INTERVAL = 5  # seconds
 API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
-UPLOAD_INTERVAL = 5  # seconds
-MAX_UPLOAD_WORKERS = 4
-MAX_QUEUE_SIZE = 8
+MAX_UPLOAD_WORKERS = 4   # 🔥 parallel uploads
 # ==========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
@@ -44,7 +43,6 @@ def record_camera(cam_id, rtsp_url):
             "-t", str(CHUNK_DURATION),
             "-c:v", "copy",
             "-c:a", "aac",
-            "-movflags", "+faststart",
             "-f", "mp4",
             "-y",
             str(temp_file)
@@ -66,55 +64,42 @@ def record_camera(cam_id, rtsp_url):
 
         time.sleep(1)
 
-# ================= UPLOADER =================
-def upload_file(file, cam_id):
-    uploading = file.with_suffix(file.suffix + ".uploading")
-
-    # 🔐 Atomic lock (prevents duplicate uploads)
+# ================= UPLOAD WORKER =================
+def upload_file(file: Path, cam_id: str):
     try:
-        file.rename(uploading)
-    except FileNotFoundError:
-        return False
-
-    try:
-        size_bytes = uploading.stat().st_size
-        size_mb = size_bytes / (1024 * 1024)
-
+        size_mb = file.stat().st_size / (1024 * 1024)
         print(f"[UP] {file.name} | size={size_mb:.2f} MB")
 
-        with open(uploading, "rb") as f:
+        with open(file, "rb") as f:
             headers = {"X-API-Key": API_KEY}
             r = requests.post(
                 UPLOAD_URL,
                 files={"file": f},
                 data={"camera_id": cam_id},
                 headers=headers,
-                timeout=20
+                timeout=30
             )
 
         if r.status_code == 200:
-            uploading.unlink()
-            print(f"[OK] Uploaded & deleted {file.name} | size={size_mb:.2f} MB")
+            file.unlink()
+            print(f"[OK] Uploaded & deleted {file.name}")
             return True
         else:
-            uploading.rename(file)
-            print(f"[WARN] Upload failed ({r.status_code}) | size={size_mb:.2f} MB")
+            print(f"[WARN] Upload failed ({r.status_code}) | {file.name}")
             return False
 
     except Exception as e:
-        if uploading.exists():
-            uploading.rename(file)
-        print(f"[ERR] Upload error: {e}")
+        print(f"[ERR] Upload error {file.name}: {e}")
         return False
 
-
+# ================= PARALLEL UPLOADER =================
 def uploader():
     executor = ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS)
 
     while True:
-        futures = []
+        tasks = []
 
-        for cam_id in CAMERAS:
+        for cam_id in CAMERAS.keys():
             cam_dir = Path(BASE_DIR) / cam_id
             if not cam_dir.exists():
                 continue
@@ -122,22 +107,19 @@ def uploader():
             files = sorted(cam_dir.glob("*.mp4"))
 
             for file in files:
-                futures.append(
+                tasks.append(
                     executor.submit(upload_file, file, cam_id)
                 )
 
-                # Prevent RAM / task explosion
-                if len(futures) >= MAX_QUEUE_SIZE:
-                    break
-
-        for f in futures:
-            f.result()
+        # Wait for all submitted uploads
+        for future in as_completed(tasks):
+            future.result()
 
         time.sleep(UPLOAD_INTERVAL)
 
 # ================= MAIN =================
 def main():
-    # Start recording threads
+    # Start recorders
     for cam_id, url in CAMERAS.items():
         threading.Thread(
             target=record_camera,
@@ -145,13 +127,13 @@ def main():
             daemon=True
         ).start()
 
-    # Start uploader thread
+    # Start uploader
     threading.Thread(
         target=uploader,
         daemon=True
     ).start()
 
-    print("✅ Recording + Parallel Uploading started (4 workers)")
+    print(f"✅ Recording + Parallel Uploading started ({MAX_UPLOAD_WORKERS} workers)")
     while True:
         time.sleep(60)
 
