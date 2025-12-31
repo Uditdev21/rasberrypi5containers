@@ -40,22 +40,37 @@ def record_camera(cam_id, rtsp_url):
         temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
         final_file = cam_dir / f"{cam_id}_{ts}.mp4"
 
-        # 🔥 MATCHES YOUR WORKING STREAMING COMMAND
+        # 🔥 ENHANCED WITH RECONNECTION LOGIC & TIMEOUTS
         cmd = [
             "ffmpeg",
+
+            # RTSP stability
             "-rtsp_transport", "tcp",
-            "-fflags", "+genpts",
             "-rtbufsize", "256M",
+            "-fflags", "+genpts+discardcorrupt",
             "-use_wallclock_as_timestamps", "1",
+
+            # 🔥 RECONNECT LOGIC (MOST IMPORTANT)
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5",
+
+            # Timeouts
+            "-rw_timeout", "15000000",   # 15s read/write timeout
+            "-stimeout", "15000000",
+
             "-i", rtsp_url,
 
+            # Time-based chunk
             "-t", str(CHUNK_DURATION),
 
+            # Encoding (same as working RTMP)
             "-c:v", "copy",
             "-c:a", "aac",
             "-ar", "44100",
             "-b:a", "128k",
 
+            # Output
             "-movflags", "+faststart",
             "-f", "mp4",
             "-y",
