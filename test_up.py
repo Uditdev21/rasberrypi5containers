@@ -22,6 +22,7 @@ API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
 MAX_UPLOAD_WORKERS = 4
 FILE_STABLE_SECONDS = 10
+HANDSHAKE_LIMIT = threading.Semaphore(1)  # Limit concurrent RTSP handshakes
 # =========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
@@ -70,12 +71,14 @@ def record_camera(cam_id, rtsp_url):
 
         print(f"[REC] {cam_id} → {final_file.name}")
 
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+        # Limit concurrent RTSP handshakes; cameras often reject simultaneous DESCRIBE
+        with HANDSHAKE_LIMIT:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
 
         elapsed = time.time() - start_time
 
