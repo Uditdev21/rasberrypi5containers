@@ -37,7 +37,7 @@ def record_camera(cam_id, rtsp_url):
         "ffmpeg",
 
         # ===== RTSP STABILITY =====
-        "-rtsp_transport", "tcp",
+        "-rtsp_transport", "udp",
         "-reconnect", "1",
         "-reconnect_streamed", "1",
         "-reconnect_delay_max", "5",
