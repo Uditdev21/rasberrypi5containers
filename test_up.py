@@ -13,7 +13,7 @@ CAMERAS = {
     "cam10": "rtsp://192.168.1.147:554/live/0/MAIN",
 }
 
-CHUNK_DURATION = 60  # seconds
+CHUNK_DURATION = 60
 BASE_DIR = "chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
@@ -26,7 +26,7 @@ MIN_FILE_SIZE_MB = 2.0   # drop junk segments
 
 Path(BASE_DIR).mkdir(exist_ok=True)
 
-# ================= RECORDING (SEGMENT MODE) =================
+# ================= RECORDING (CLOCK SEGMENT MODE) =================
 def record_camera(cam_id, rtsp_url):
     cam_dir = Path(BASE_DIR) / cam_id
     cam_dir.mkdir(parents=True, exist_ok=True)
@@ -36,18 +36,22 @@ def record_camera(cam_id, rtsp_url):
     cmd = [
         "ffmpeg",
 
-        # 🔥 RTSP STABILITY (CRITICAL)
+        # ===== RTSP STABILITY =====
         "-rtsp_transport", "tcp",
         "-reconnect", "1",
         "-reconnect_streamed", "1",
         "-reconnect_delay_max", "5",
         "-stimeout", "5000000",
         "-rw_timeout", "5000000",
-        "-fflags", "+genpts",
+
+        # ===== TIMESTAMP SANITIZATION (CRITICAL) =====
+        "-use_wallclock_as_timestamps", "1",
+        "-fflags", "+genpts+discardcorrupt",
+        "-avoid_negative_ts", "make_zero",
 
         "-i", rtsp_url,
 
-        # 🔥 VIDEO (STABLE CCTV SETTINGS)
+        # ===== VIDEO =====
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-tune", "zerolatency",
@@ -59,16 +63,17 @@ def record_camera(cam_id, rtsp_url):
         "-c:a", "aac",
         "-movflags", "+faststart",
 
-        # 🔥 SEGMENT MODE
+        # ===== TRUE CLOCK-BASED SEGMENTATION =====
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
-        "-reset_timestamps", "1",
+        "-segment_atclocktime", "1",
+        "-segment_time_delta", "0.1",
         "-strftime", "1",
 
         str(output_pattern)
     ]
 
-    print(f"🎥 [{cam_id}] Segment recorder started")
+    print(f"🎥 [{cam_id}] Segment recorder started (CLOCK MODE)")
 
     while True:
         proc = subprocess.Popen(
@@ -78,7 +83,7 @@ def record_camera(cam_id, rtsp_url):
         )
         proc.wait()
 
-        # Only happens if camera/network really dies
+        # Only happens if RTSP stream actually dies
         print(f"⚠ [{cam_id}] FFmpeg exited — restarting in 3s")
         time.sleep(3)
 
@@ -87,7 +92,7 @@ def upload_one(file: Path, cam_id: str):
     try:
         size_mb = file.stat().st_size / (1024 * 1024)
 
-        # Drop junk segments
+        # Drop junk / partial segments
         if size_mb < MIN_FILE_SIZE_MB:
             file.unlink()
             print(f"[DROP] {file.name} ({size_mb:.1f} MB)")
@@ -127,7 +132,7 @@ def uploader():
             for file in cam_dir.glob("*.mp4"):
                 jobs.append((file.stat().st_mtime, file, cam_id))
 
-        # Oldest first (important)
+        # Upload oldest first
         jobs.sort(key=lambda x: x[0])
 
         for _, file, cam_id in jobs:
@@ -144,12 +149,9 @@ def main():
             daemon=True
         ).start()
 
-    threading.Thread(
-        target=uploader,
-        daemon=True
-    ).start()
+    threading.Thread(target=uploader, daemon=True).start()
 
-    print("✅ Camera recording & uploading started (SEGMENT MODE – STABLE)")
+    print("✅ Camera recording & uploading started (SEGMENT MODE – CLOCK STABLE)")
     while True:
         time.sleep(60)
 
