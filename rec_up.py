@@ -17,13 +17,31 @@ CHUNK_DURATION = 60  # seconds
 BASE_DIR = "chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
-UPLOAD_INTERVAL = 5  # seconds
 API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
-MAX_UPLOAD_WORKERS = 4   # 🔥 parallel uploads
+UPLOAD_INTERVAL = 60       # ✅ check every 60 sec
+MAX_UPLOAD_WORKERS = 4     # parallel uploads
 # ==========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
+
+# ================= UTILS =================
+def is_full_chunk(file: Path, expected_sec: int) -> bool:
+    """Verify recorded duration using ffprobe"""
+    try:
+        out = subprocess.check_output(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(file)
+            ],
+            stderr=subprocess.DEVNULL
+        )
+        duration = float(out.strip())
+        return duration >= expected_sec - 1  # 1s tolerance
+    except Exception:
+        return False
 
 # ================= RECORDING =================
 def record_camera(cam_id, rtsp_url):
@@ -31,9 +49,11 @@ def record_camera(cam_id, rtsp_url):
     cam_dir.mkdir(parents=True, exist_ok=True)
 
     while True:
-        ts = int(time.time())
-        temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        part_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
         final_file = cam_dir / f"{cam_id}_{ts}.mp4"
+
+        print(f"[REC] {cam_id} → {final_file.name}")
 
         cmd = [
             "ffmpeg",
@@ -43,28 +63,23 @@ def record_camera(cam_id, rtsp_url):
             "-t", str(CHUNK_DURATION),
             "-c:v", "copy",
             "-c:a", "aac",
-            "-f", "mp4",
+            "-movflags", "+faststart",
             "-y",
-            str(temp_file)
+            str(part_file)
         ]
 
-        print(f"[REC] {cam_id} → {final_file.name}")
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-
-        if result.returncode == 0 and temp_file.exists():
-            temp_file.rename(final_file)
+        # ✅ Promote only if FULL 60s recorded
+        if part_file.exists() and is_full_chunk(part_file, CHUNK_DURATION):
+            part_file.rename(final_file)
         else:
-            if temp_file.exists():
-                temp_file.unlink()
+            if part_file.exists():
+                part_file.unlink()  # ❌ discard partial
 
-        time.sleep(1)
+        # No sleep → next chunk starts immediately
 
-# ================= UPLOAD WORKER =================
+# ================= UPLOAD =================
 def upload_file(file: Path, cam_id: str):
     try:
         size_mb = file.stat().st_size / (1024 * 1024)
@@ -77,7 +92,7 @@ def upload_file(file: Path, cam_id: str):
                 files={"file": f},
                 data={"camera_id": cam_id},
                 headers=headers,
-                timeout=30
+                timeout=60
             )
 
         if r.status_code == 200:
@@ -104,14 +119,10 @@ def uploader():
             if not cam_dir.exists():
                 continue
 
-            files = sorted(cam_dir.glob("*.mp4"))
+            # ✅ only finalized files
+            for file in sorted(cam_dir.glob("*.mp4")):
+                tasks.append(executor.submit(upload_file, file, cam_id))
 
-            for file in files:
-                tasks.append(
-                    executor.submit(upload_file, file, cam_id)
-                )
-
-        # Wait for all submitted uploads
         for future in as_completed(tasks):
             future.result()
 
@@ -133,7 +144,8 @@ def main():
         daemon=True
     ).start()
 
-    print(f"✅ Recording + Parallel Uploading started ({MAX_UPLOAD_WORKERS} workers)")
+    print("✅ Recording (.part) → promote on 60s → parallel upload started")
+
     while True:
         time.sleep(60)
 
