@@ -21,7 +21,7 @@ API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
 UPLOAD_INTERVAL = 5
 MAX_UPLOAD_WORKERS = 2       # SAFE FOR RPI
-MAX_FILES_PER_CAMERA = 1000   # DISK SAFETY
+# MAX_FILES_PER_CAMERA = 1000   # DISK SAFETY
 # ==========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
@@ -42,10 +42,10 @@ def record_camera(cam_id, rtsp_url):
         final_file = cam_dir / f"{cam_id}_{ts}.mp4"
 
         # Disk safety
-        if len(list(cam_dir.glob("*.mp4"))) > MAX_FILES_PER_CAMERA:
-            print(f"[DROP] Disk limit reached for {cam_id}")
-            time.sleep(5)
-            continue
+        # if len(list(cam_dir.glob("*.mp4"))) > MAX_FILES_PER_CAMERA:
+        #     print(f"[DROP] Disk limit reached for {cam_id}")
+        #     time.sleep(5)
+        #     continue
 
         cmd = [
             "ffmpeg",
