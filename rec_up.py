@@ -14,7 +14,7 @@ CAMERAS = {
 }
 
 CHUNK_DURATION = 60          # seconds (reduce to 30 if network weak)
-BASE_DIR = "test_chunks"
+BASE_DIR = "chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
 API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
