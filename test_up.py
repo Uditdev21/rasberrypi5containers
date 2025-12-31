@@ -13,6 +13,14 @@ CAMERAS = {
     "cam10": "rtsp://192.168.1.147:554/live/0/MAIN",
 }
 
+# Optional: set per-camera RTMP targets here (leave empty to skip RTMP)
+RTMP_TARGETS = {
+    # "cam7": "rtmp://your-server/live/stream7",
+    # "cam8": "rtmp://your-server/live/stream8",
+    # "cam9": "rtmp://your-server/live/stream9",
+    # "cam10": "rtmp://your-server/live/stream10",
+}
+
 CHUNK_DURATION = 60        # ⏱ time-based only
 BASE_DIR = "test_chunks"
 
@@ -27,49 +35,44 @@ HANDSHAKE_LIMIT = threading.Semaphore(1)  # Limit concurrent RTSP handshakes
 
 Path(BASE_DIR).mkdir(exist_ok=True)
 
-# ================= RECORDING =================
+# ================= RECORDING (TEE: RTMP + 60s SEGMENTS) =================
 def record_camera(cam_id, rtsp_url):
+    """Single RTSP session per camera; tee to RTMP + 60s MP4 segments."""
     cam_dir = Path(BASE_DIR) / cam_id
     cam_dir.mkdir(parents=True, exist_ok=True)
 
     restart_delay = 2
 
+    # Build tee outputs: RTMP + segmented MP4 with strftime filenames
+    tee_outputs = []
+    rtmp_target = RTMP_TARGETS.get(cam_id)
+    if rtmp_target:
+        tee_outputs.append(f"[f=flv]{rtmp_target}")
+    tee_outputs.append(
+        f"[f=segment:segment_time={CHUNK_DURATION}:reset_timestamps=1:strftime=1]{cam_dir}/%Y%m%d_%H%M%S.mp4"
+    )
+    tee_spec = "|".join(tee_outputs)
+
+    # Single long-lived FFmpeg process per camera
+    cmd = [
+        "ffmpeg",
+        "-rtsp_transport", "tcp",
+        "-fflags", "+genpts",
+        "-rtbufsize", "256M",
+        "-use_wallclock_as_timestamps", "1",
+        "-i", rtsp_url,
+        "-map", "0",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-ar", "44100",
+        "-b:a", "128k",
+        "-f", "tee",
+        tee_spec,
+    ]
+
     while True:
-        ts = int(time.time())
         start_time = time.time()
-
-        temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
-        final_file = cam_dir / f"{cam_id}_{ts}.mp4"
-
-        # 🔥 ENHANCED WITH RECONNECTION LOGIC & TIMEOUTS
-        cmd = [
-            "ffmpeg",
-
-            # RTSP stability
-            "-rtsp_transport", "tcp",
-            "-rtbufsize", "256M",
-            "-fflags", "+genpts+discardcorrupt",
-            "-use_wallclock_as_timestamps", "1",
-
-            "-i", rtsp_url,
-
-            # Time-based chunk
-            "-t", str(CHUNK_DURATION),
-
-            # Encoding (same as working RTMP)
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-ar", "44100",
-            "-b:a", "128k",
-
-            # Output
-            "-movflags", "+faststart",
-            "-f", "mp4",
-            "-y",
-            str(temp_file)
-        ]
-
-        print(f"[REC] {cam_id} → {final_file.name}")
+        print(f"[REC] {cam_id} → tee to RTMP + {CHUNK_DURATION}s segments")
 
         # Limit concurrent RTSP handshakes; cameras often reject simultaneous DESCRIBE
         with HANDSHAKE_LIMIT:
@@ -82,34 +85,20 @@ def record_camera(cam_id, rtsp_url):
 
         elapsed = time.time() - start_time
 
-        if result.returncode == 0 and temp_file.exists():
-            temp_file.rename(final_file)
-            print(f"[OK] {cam_id} recorded {elapsed:.1f}s")
+        if result.returncode == 0:
+            print(f"[OK] {cam_id} FFmpeg exited normally after {elapsed:.1f}s (unexpected)")
         else:
-            if temp_file.exists():
-                temp_file.unlink()
-            # Log FFmpeg errors for debugging
             if result.stderr:
-                error_lines = result.stderr.split('\n')[-5:]  # Last 5 lines
+                error_lines = result.stderr.split('\n')[-8:]
                 print(f"[ERR] {cam_id} FFmpeg error (code {result.returncode}): {' | '.join(error_lines)}")
 
-            # If camera reports session issues, cool down longer to avoid hammering it
-            if result.stderr and "Session Not Found" in result.stderr:
-                cooldown = max(restart_delay, 10)
-                print(f"[WARN] {cam_id} RTSP session missing; cooling down {cooldown}s before retry")
-                time.sleep(cooldown)
-                restart_delay = min(cooldown * 2, 30)
-                continue
-
         # Backoff if FFmpeg exits too early
-        if elapsed < 5:
+        if elapsed < 10:
             print(f"[WARN] {cam_id} FFmpeg exited early ({elapsed:.1f}s), retrying in {restart_delay}s")
             time.sleep(restart_delay)
             restart_delay = min(restart_delay * 2, 30)
         else:
             restart_delay = 2
-
-        time.sleep(1)
 
 # ================= UPLOAD WORKER =================
 def upload_file(file: Path, cam_id: str):
