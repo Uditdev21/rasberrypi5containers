@@ -93,6 +93,14 @@ def record_camera(cam_id, rtsp_url):
                 error_lines = result.stderr.split('\n')[-5:]  # Last 5 lines
                 print(f"[ERR] {cam_id} FFmpeg error (code {result.returncode}): {' | '.join(error_lines)}")
 
+            # If camera reports session issues, cool down longer to avoid hammering it
+            if result.stderr and "Session Not Found" in result.stderr:
+                cooldown = max(restart_delay, 10)
+                print(f"[WARN] {cam_id} RTSP session missing; cooling down {cooldown}s before retry")
+                time.sleep(cooldown)
+                restart_delay = min(cooldown * 2, 30)
+                continue
+
         # Backoff if FFmpeg exits too early
         if elapsed < 5:
             print(f"[WARN] {cam_id} FFmpeg exited early ({elapsed:.1f}s), retrying in {restart_delay}s")
@@ -164,6 +172,9 @@ def main():
             args=(cam_id, url),
             daemon=True
         ).start()
+
+        # Stagger RTSP connection attempts so cameras are not hit at the same moment
+        time.sleep(3)
 
     threading.Thread(
         target=uploader,
