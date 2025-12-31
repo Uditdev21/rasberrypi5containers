@@ -50,11 +50,6 @@ def record_camera(cam_id, rtsp_url):
             "-fflags", "+genpts+discardcorrupt",
             "-use_wallclock_as_timestamps", "1",
 
-            # 🔥 RECONNECT LOGIC (MOST IMPORTANT)
-            "-reconnect", "1",
-            "-reconnect_streamed", "1",
-            "-reconnect_delay_max", "5",
-
             # Timeout
             "-rw_timeout", "15000000",   # 15s read/write timeout
 
