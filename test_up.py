@@ -13,15 +13,15 @@ CAMERAS = {
     "cam10": "rtsp://192.168.1.147:554/live/0/MAIN",
 }
 
-CHUNK_DURATION = 60            # ⏱ TIME BASED ONLY
-BASE_DIR = "chunks"
+CHUNK_DURATION = 60        # ⏱ time-based only
+BASE_DIR = "test_chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
 UPLOAD_INTERVAL = 5
 API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
 MAX_UPLOAD_WORKERS = 4
-FILE_STABLE_SECONDS = 10       # wait before uploading completed files
+FILE_STABLE_SECONDS = 10
 # =========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
@@ -31,7 +31,7 @@ def record_camera(cam_id, rtsp_url):
     cam_dir = Path(BASE_DIR) / cam_id
     cam_dir.mkdir(parents=True, exist_ok=True)
 
-    restart_delay = 2  # exponential backoff start
+    restart_delay = 2
 
     while True:
         ts = int(time.time())
@@ -40,17 +40,22 @@ def record_camera(cam_id, rtsp_url):
         temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
         final_file = cam_dir / f"{cam_id}_{ts}.mp4"
 
+        # 🔥 MATCHES YOUR WORKING STREAMING COMMAND
         cmd = [
             "ffmpeg",
             "-rtsp_transport", "tcp",
-            "-stimeout", "5000000",     # 5s RTSP timeout
             "-fflags", "+genpts",
-            "-flags", "low_delay",
-            "-max_delay", "500000",
+            "-rtbufsize", "256M",
+            "-use_wallclock_as_timestamps", "1",
             "-i", rtsp_url,
-            "-t", str(CHUNK_DURATION),  # ⏱ ONLY CONTROL
+
+            "-t", str(CHUNK_DURATION),
+
             "-c:v", "copy",
             "-c:a", "aac",
+            "-ar", "44100",
+            "-b:a", "128k",
+
             "-movflags", "+faststart",
             "-f", "mp4",
             "-y",
@@ -73,13 +78,13 @@ def record_camera(cam_id, rtsp_url):
             if temp_file.exists():
                 temp_file.unlink()
 
-        # 🚨 FFmpeg exited too early → camera unstable
+        # Backoff if FFmpeg exits too early
         if elapsed < 5:
             print(f"[WARN] {cam_id} FFmpeg exited early ({elapsed:.1f}s), retrying in {restart_delay}s")
             time.sleep(restart_delay)
             restart_delay = min(restart_delay * 2, 30)
         else:
-            restart_delay = 2  # reset after healthy run
+            restart_delay = 2
 
         time.sleep(1)
 
