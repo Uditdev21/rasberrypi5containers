@@ -81,17 +81,23 @@ def record_camera(cam_id, rtsp_url):
 
         result = subprocess.run(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
         )
 
         elapsed = time.time() - start_time
 
         if result.returncode == 0 and temp_file.exists():
             temp_file.rename(final_file)
+            print(f"[OK] {cam_id} recorded {elapsed:.1f}s")
         else:
             if temp_file.exists():
                 temp_file.unlink()
+            # Log FFmpeg errors for debugging
+            if result.stderr:
+                error_lines = result.stderr.split('\n')[-5:]  # Last 5 lines
+                print(f"[ERR] {cam_id} FFmpeg error (code {result.returncode}): {' | '.join(error_lines)}")
 
         # Backoff if FFmpeg exits too early
         if elapsed < 5:
