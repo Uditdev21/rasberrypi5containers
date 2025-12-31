@@ -55,9 +55,8 @@ def record_camera(cam_id, rtsp_url):
             "-reconnect_streamed", "1",
             "-reconnect_delay_max", "5",
 
-            # Timeouts
+            # Timeout
             "-rw_timeout", "15000000",   # 15s read/write timeout
-            "-socket_timeout", "15000000",
 
             "-i", rtsp_url,
 
