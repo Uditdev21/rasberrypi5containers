@@ -50,9 +50,6 @@ def record_camera(cam_id, rtsp_url):
             "-fflags", "+genpts+discardcorrupt",
             "-use_wallclock_as_timestamps", "1",
 
-            # Timeout
-            "-rw_timeout", "15000000",   # 15s read/write timeout
-
             "-i", rtsp_url,
 
             # Time-based chunk
