@@ -3,7 +3,7 @@ import subprocess
 import threading
 import requests
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ================= CONFIG =================
 CAMERAS = {
@@ -13,125 +13,112 @@ CAMERAS = {
     "cam10": "rtsp://192.168.1.147:554/live/0/MAIN",
 }
 
-CHUNK_DURATION = 60
+CHUNK_DURATION = 60        # ⏱ time-based recording ONLY (seconds)
 BASE_DIR = "test_chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
+UPLOAD_INTERVAL = 5
 API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
-MAX_UPLOAD_WORKERS = 10
-UPLOAD_INTERVAL = 5
-MIN_FILE_SIZE_MB = 2.0
+MAX_UPLOAD_WORKERS = 4
+FILE_STABLE_SECONDS = 10  # wait before uploading finished file
 # ==========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
 
-# ================= RECORDING (UDP + CLOCK SEGMENT MODE) =================
+# ================= RECORDING =================
 def record_camera(cam_id, rtsp_url):
     cam_dir = Path(BASE_DIR) / cam_id
     cam_dir.mkdir(parents=True, exist_ok=True)
 
-    output_pattern = cam_dir / f"{cam_id}_%Y%m%d_%H%M%S.mp4"
-
-    cmd = [
-        "ffmpeg",
-
-        # 🔥 RTSP over UDP (MOST STABLE FOR IP CAMERAS)
-        "-rtsp_transport", "udp",
-
-        # Timestamp & corruption handling
-        "-use_wallclock_as_timestamps", "1",
-        "-fflags", "+genpts+discardcorrupt",
-        "-avoid_negative_ts", "make_zero",
-
-        "-i", rtsp_url,
-
-        # Video
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-tune", "zerolatency",
-        "-pix_fmt", "yuv420p",
-        "-g", "60",
-        "-keyint_min", "60",
-        "-sc_threshold", "0",
-
-        "-c:a", "aac",
-        "-movflags", "+faststart",
-
-        # 🔥 CLOCK-BASED SEGMENTATION
-        "-f", "segment",
-        "-segment_time", str(CHUNK_DURATION),
-        "-segment_atclocktime", "1",
-        "-segment_time_delta", "0.1",
-        "-strftime", "1",
-
-        str(output_pattern)
-    ]
-
-    print(f"🎥 [{cam_id}] Segment recorder started (UDP + CLOCK MODE)")
-
     while True:
-        proc = subprocess.Popen(
+        ts = int(time.time())
+
+        temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
+        final_file = cam_dir / f"{cam_id}_{ts}.mp4"
+
+        cmd = [
+            "ffmpeg",
+            "-rtsp_transport", "tcp",
+            "-fflags", "+genpts",
+            "-flags", "low_delay",
+            "-max_delay", "500000",
+            "-i", rtsp_url,
+            "-t", str(CHUNK_DURATION),   # ⏱ ONLY TIME BASED
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            "-f", "mp4",
+            "-y",
+            str(temp_file)
+        ]
+
+        print(f"[REC] {cam_id} → {final_file.name}")
+
+        result = subprocess.run(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
-        proc.wait()
 
-        # Camera closed stream → wait before retry
-        print(f"⚠ [{cam_id}] FFmpeg exited — restarting in 10s")
-        time.sleep(10)
+        if result.returncode == 0 and temp_file.exists():
+            temp_file.rename(final_file)
+        else:
+            if temp_file.exists():
+                temp_file.unlink()
 
-# ================= UPLOADER =================
-def upload_one(file: Path, cam_id: str):
+        time.sleep(1)
+
+# ================= UPLOAD WORKER =================
+def upload_file(file: Path, cam_id: str):
     try:
         size_mb = file.stat().st_size / (1024 * 1024)
-
-        # Drop junk segments
-        if size_mb < MIN_FILE_SIZE_MB:
-            file.unlink()
-            print(f"[DROP] {file.name} ({size_mb:.1f} MB)")
-            return
-
-        print(f"[UP] {file.name} ({size_mb:.1f} MB)")
+        print(f"[UP] {file.name} | size={size_mb:.2f} MB")
 
         with open(file, "rb") as f:
+            headers = {"X-API-Key": API_KEY}
             r = requests.post(
                 UPLOAD_URL,
                 files={"file": f},
                 data={"camera_id": cam_id},
-                headers={"X-API-Key": API_KEY},
-                timeout=180
+                headers=headers,
+                timeout=30
             )
 
         if r.status_code == 200:
             file.unlink()
             print(f"[OK] Uploaded & deleted {file.name}")
         else:
-            print(f"[WARN] Upload failed {file.name} ({r.status_code})")
+            print(f"[WARN] Upload failed ({r.status_code}) | {file.name}")
 
     except Exception as e:
         print(f"[ERR] Upload error {file.name}: {e}")
 
+# ================= PARALLEL UPLOADER =================
 def uploader():
     executor = ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS)
 
     while True:
-        jobs = []
+        tasks = []
+        now = time.time()
 
-        for cam_id in CAMERAS:
+        for cam_id in CAMERAS.keys():
             cam_dir = Path(BASE_DIR) / cam_id
             if not cam_dir.exists():
                 continue
 
-            for file in cam_dir.glob("*.mp4"):
-                jobs.append((file.stat().st_mtime, file, cam_id))
+            files = [
+                f for f in cam_dir.glob("*.mp4")
+                if now - f.stat().st_mtime >= FILE_STABLE_SECONDS
+            ]
 
-        # Oldest first
-        jobs.sort(key=lambda x: x[0])
+            for file in sorted(files):
+                tasks.append(
+                    executor.submit(upload_file, file, cam_id)
+                )
 
-        for _, file, cam_id in jobs:
-            executor.submit(upload_one, file, cam_id)
+        for future in as_completed(tasks):
+            future.result()
 
         time.sleep(UPLOAD_INTERVAL)
 
@@ -144,9 +131,12 @@ def main():
             daemon=True
         ).start()
 
-    threading.Thread(target=uploader, daemon=True).start()
+    threading.Thread(
+        target=uploader,
+        daemon=True
+    ).start()
 
-    print("✅ Camera recording & uploading started (UDP + CLOCK STABLE)")
+    print(f"✅ Recording (time-based) + Parallel Uploading started ({MAX_UPLOAD_WORKERS} workers)")
     while True:
         time.sleep(60)
 
