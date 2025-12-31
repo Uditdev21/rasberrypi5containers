@@ -5,8 +5,6 @@ import requests
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
-from test_up import UPLOAD_INTERVAL
-
 # ================= CONFIG =================
 CAMERAS = {
     "cam7": "rtsp://192.168.1.160:554/live/0/MAIN",
@@ -15,15 +13,15 @@ CAMERAS = {
     "cam10": "rtsp://192.168.1.147:554/live/0/MAIN",
 }
 
-CHUNK_DURATION = 60          # seconds
+CHUNK_DURATION = 60  # seconds
 BASE_DIR = "chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
 API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
-UPLOAD_INTERVAL = 5  # seconds
 
-MAX_UPLOAD_WORKERS = 4       # 🔥 PARALLEL UPLOADS
-MAX_QUEUE_SIZE = 8           # safety limit
+UPLOAD_INTERVAL = 5  # seconds
+MAX_UPLOAD_WORKERS = 4
+MAX_QUEUE_SIZE = 8
 # ==========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
@@ -38,45 +36,19 @@ def record_camera(cam_id, rtsp_url):
         temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
         final_file = cam_dir / f"{cam_id}_{ts}.mp4"
 
-        if cam_id == "cam1":
-            # Re-encode HEVC + PCM → H.264 + AAC
-            cmd = [
-                "ffmpeg",
-                "-rtsp_transport", "tcp",
-                "-fflags", "+genpts",
-                "-i", rtsp_url,
-                "-t", str(CHUNK_DURATION),
-
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-profile:v", "baseline",
-                "-pix_fmt", "yuv420p",
-
-                "-c:a", "aac",
-                "-ar", "44100",
-                "-ac", "1",
-                "-b:a", "64k",
-
-                "-movflags", "+faststart",
-                "-f", "mp4",
-                "-y",
-                str(temp_file)
-            ]
-        else:
-            # Stream copy
-            cmd = [
-                "ffmpeg",
-                "-rtsp_transport", "tcp",
-                "-fflags", "+genpts",
-                "-i", rtsp_url,
-                "-t", str(CHUNK_DURATION),
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-movflags", "+faststart",
-                "-f", "mp4",
-                "-y",
-                str(temp_file)
-            ]
+        cmd = [
+            "ffmpeg",
+            "-rtsp_transport", "tcp",
+            "-fflags", "+genpts",
+            "-i", rtsp_url,
+            "-t", str(CHUNK_DURATION),
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            "-f", "mp4",
+            "-y",
+            str(temp_file)
+        ]
 
         print(f"[REC] {cam_id} → {final_file.name}")
 
@@ -96,10 +68,21 @@ def record_camera(cam_id, rtsp_url):
 
 # ================= UPLOADER =================
 def upload_file(file, cam_id):
-    try:
-        print(f"[UP] {file.name}")
+    uploading = file.with_suffix(file.suffix + ".uploading")
 
-        with open(file, "rb") as f:
+    # 🔐 Atomic lock (prevents duplicate uploads)
+    try:
+        file.rename(uploading)
+    except FileNotFoundError:
+        return False
+
+    try:
+        size_bytes = uploading.stat().st_size
+        size_mb = size_bytes / (1024 * 1024)
+
+        print(f"[UP] {file.name} | size={size_mb:.2f} MB")
+
+        with open(uploading, "rb") as f:
             headers = {"X-API-Key": API_KEY}
             r = requests.post(
                 UPLOAD_URL,
@@ -110,14 +93,17 @@ def upload_file(file, cam_id):
             )
 
         if r.status_code == 200:
-            file.unlink()
-            print(f"[OK] Uploaded & deleted {file.name}")
+            uploading.unlink()
+            print(f"[OK] Uploaded & deleted {file.name} | size={size_mb:.2f} MB")
             return True
         else:
-            print(f"[WARN] Upload failed ({r.status_code})")
+            uploading.rename(file)
+            print(f"[WARN] Upload failed ({r.status_code}) | size={size_mb:.2f} MB")
             return False
 
     except Exception as e:
+        if uploading.exists():
+            uploading.rename(file)
         print(f"[ERR] Upload error: {e}")
         return False
 
@@ -128,7 +114,7 @@ def uploader():
     while True:
         futures = []
 
-        for cam_id in CAMERAS.keys():
+        for cam_id in CAMERAS:
             cam_dir = Path(BASE_DIR) / cam_id
             if not cam_dir.exists():
                 continue
@@ -140,18 +126,18 @@ def uploader():
                     executor.submit(upload_file, file, cam_id)
                 )
 
-                # prevent RAM / thread explosion
+                # Prevent RAM / task explosion
                 if len(futures) >= MAX_QUEUE_SIZE:
                     break
 
         for f in futures:
-            f.result()   # wait for uploads to finish
+            f.result()
 
         time.sleep(UPLOAD_INTERVAL)
 
 # ================= MAIN =================
 def main():
-    # Start recorder threads
+    # Start recording threads
     for cam_id, url in CAMERAS.items():
         threading.Thread(
             target=record_camera,
@@ -165,7 +151,7 @@ def main():
         daemon=True
     ).start()
 
-    print("✅ Recording + Parallel Uploading started (4 uploads max)")
+    print("✅ Recording + Parallel Uploading started (4 workers)")
     while True:
         time.sleep(60)
 
