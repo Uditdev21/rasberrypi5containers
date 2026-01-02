@@ -10,7 +10,11 @@ BASE_DIR = "chunks"
 # ==========================================
 
 # 🔥 Stream name = this file's name (without .py)
-STREAM_NAME = Path(__file__).stem
+# STREAM_NAME = Path(__file__).stem
+import os
+from pathlib import Path
+
+STREAM_NAME = os.environ["STREAM_NAME"]
 
 Path(BASE_DIR).mkdir(exist_ok=True)
 STREAM_DIR = Path(BASE_DIR) / STREAM_NAME

@@ -1,41 +1,66 @@
+version: "3.9"
+
 services:
   stream7:
     build: .
     container_name: stream7
     restart: always
+
+    entrypoint: []                       # 🔥 disable ffmpeg entrypoint
+    command: ["python", "/app/stream.py"]
+
+    environment:
+      - STREAM_NAME=stream7              # 🔥 camera identity
+      - TZ=Asia/Kolkata
+
     volumes:
       - ./recording/stream7.py:/app/stream.py:ro
       - ./chunks:/app/chunks
-    environment:
-      - TZ=Asia/Kolkata
 
   stream8:
     build: .
     container_name: stream8
     restart: always
+
+    entrypoint: []
+    command: ["python", "/app/stream.py"]
+
+    environment:
+      - STREAM_NAME=stream8
+      - TZ=Asia/Kolkata
+
     volumes:
       - ./recording/stream8.py:/app/stream.py:ro
       - ./chunks:/app/chunks
-    environment:
-      - TZ=Asia/Kolkata
-  
+
   stream9:
     build: .
     container_name: stream9
     restart: always
+
+    entrypoint: []
+    command: ["python", "/app/stream.py"]
+
+    environment:
+      - STREAM_NAME=stream9
+      - TZ=Asia/Kolkata
+
     volumes:
       - ./recording/stream9.py:/app/stream.py:ro
       - ./chunks:/app/chunks
-    environment:
-      - TZ=Asia/Kolkata
-    
+
   stream10:
     build: .
     container_name: stream10
     restart: always
+
+    entrypoint: []
+    command: ["python", "/app/stream.py"]
+
+    environment:
+      - STREAM_NAME=stream10
+      - TZ=Asia/Kolkata
+
     volumes:
       - ./recording/stream10.py:/app/stream.py:ro
       - ./chunks:/app/chunks
-    environment:
-      - TZ=Asia/Kolkata 
-
