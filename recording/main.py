@@ -8,7 +8,7 @@ STREAM_SCRIPTS = [
     "stream7.py",
     "stream8.py",
     "stream9.py",
-    "stream810.py"
+    "stream10.py"
     # "cam7.py",
     # "office_gate.py",
 ]
