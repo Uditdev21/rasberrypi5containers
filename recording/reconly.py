@@ -1,36 +1,42 @@
 import time
 import subprocess
-import threading
 from pathlib import Path
+import sys
 
 # ================= CONFIG =================
-CAMERAS = {
-    "cam7": "rtsp://192.168.1.160:554/live/0/MAIN",
-    # "cam8": "rtsp://192.168.1.134:554/live/0/MAIN",
-    # "cam9": "rtsp://192.168.1.83:554/live/0/MAIN",
-    # "cam10": "rtsp://192.168.1.147:554/live/0/MAIN",
-}
-
+RTSP_URL = "rtsp://192.168.1.160:554/live/0/MAIN"
 CHUNK_DURATION = 60   # seconds
 BASE_DIR = "chunks"
 # ==========================================
 
-Path(BASE_DIR).mkdir(exist_ok=True)
+# ---------- STREAM NAME FROM FILE ARG ----------
+# Usage:
+# python3 recorder_single.py cam7
+if len(sys.argv) < 2:
+    print("Usage: python3 recorder_single.py <stream_name>")
+    sys.exit(1)
 
-def record_camera(cam_id, rtsp_url):
-    cam_dir = Path(BASE_DIR) / cam_id
-    cam_dir.mkdir(parents=True, exist_ok=True)
+STREAM_NAME = sys.argv[1]
+
+Path(BASE_DIR).mkdir(exist_ok=True)
+STREAM_DIR = Path(BASE_DIR) / STREAM_NAME
+STREAM_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def record_stream():
+    print(f"🎥 Recording started for stream: {STREAM_NAME}")
+    print(f"📂 Output directory: {STREAM_DIR}")
 
     while True:
         ts = int(time.time())
-        temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
-        final_file = cam_dir / f"{cam_id}_{ts}.mp4"
+        temp_file = STREAM_DIR / f"{STREAM_NAME}_{ts}.mp4.part"
+        final_file = STREAM_DIR / f"{STREAM_NAME}_{ts}.mp4"
 
         cmd = [
             "ffmpeg",
             "-rtsp_transport", "tcp",
             "-fflags", "+genpts",
-            "-i", rtsp_url,
+            "-i", RTSP_URL,
             "-t", str(CHUNK_DURATION),
             "-c:v", "copy",
             "-c:a", "aac",
@@ -39,7 +45,7 @@ def record_camera(cam_id, rtsp_url):
             str(temp_file)
         ]
 
-        print(f"[REC] {cam_id} → {final_file.name}")
+        print(f"[REC] → {final_file.name}")
 
         result = subprocess.run(
             cmd,
@@ -53,21 +59,10 @@ def record_camera(cam_id, rtsp_url):
         else:
             if temp_file.exists():
                 temp_file.unlink()
-            print(f"[ERR] Recording failed {cam_id}")
+            print(f"[ERR] Recording failed")
 
         time.sleep(1)
 
-def main():
-    for cam_id, url in CAMERAS.items():
-        threading.Thread(
-            target=record_camera,
-            args=(cam_id, url),
-            daemon=True
-        ).start()
-
-    print("🎥 Recording ONLY started")
-    while True:
-        time.sleep(60)
 
 if __name__ == "__main__":
-    main()
+    record_stream()
