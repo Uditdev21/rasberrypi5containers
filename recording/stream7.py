@@ -1,7 +1,7 @@
 import time
 import subprocess
 from pathlib import Path
-import sys
+import os
 
 # ================= CONFIG =================
 RTSP_URL = "rtsp://192.168.1.160:554/live/0/MAIN"
@@ -9,14 +9,8 @@ CHUNK_DURATION = 60   # seconds
 BASE_DIR = "chunks"
 # ==========================================
 
-# ---------- STREAM NAME FROM FILE ARG ----------
-# Usage:
-# python3 recorder_single.py cam7
-if len(sys.argv) < 2:
-    print("Usage: python3 recorder_single.py <stream_name>")
-    sys.exit(1)
-
-STREAM_NAME = sys.argv[1]
+# 🔥 Stream name = this file's name (without .py)
+STREAM_NAME = Path(__file__).stem
 
 Path(BASE_DIR).mkdir(exist_ok=True)
 STREAM_DIR = Path(BASE_DIR) / STREAM_NAME
