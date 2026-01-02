@@ -13,98 +13,63 @@ CAMERAS = {
     "cam10": "rtsp://192.168.1.147:554/live/0/MAIN",
 }
 
-# Optional: set per-camera RTMP targets here (leave empty to skip RTMP)
-RTMP_TARGETS = {
-    # "cam7": "rtmp://your-server/live/stream7",
-    # "cam8": "rtmp://your-server/live/stream8",
-    # "cam9": "rtmp://your-server/live/stream9",
-    # "cam10": "rtmp://your-server/live/stream10",
-}
-
-CHUNK_DURATION = 60        # ⏱ time-based only
+CHUNK_DURATION = 60          # seconds per recording
 BASE_DIR = "test_chunks"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
-UPLOAD_INTERVAL = 5
 API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
-MAX_UPLOAD_WORKERS = 4
-FILE_STABLE_SECONDS = 10
-HANDSHAKE_LIMIT = threading.Semaphore(1)  # Limit concurrent RTSP handshakes
-# =========================================
+UPLOAD_INTERVAL = 5          # seconds
+MAX_UPLOAD_WORKERS = 4       # 🔥 parallel uploads
+# ==========================================
 
 Path(BASE_DIR).mkdir(exist_ok=True)
 
-# ================= RECORDING (TEE: RTMP + 60s SEGMENTS) =================
+# ================= RECORDING =================
 def record_camera(cam_id, rtsp_url):
-    """Single RTSP session per camera; tee to RTMP + 60s MP4 segments."""
     cam_dir = Path(BASE_DIR) / cam_id
     cam_dir.mkdir(parents=True, exist_ok=True)
 
-    restart_delay = 2
-
-    # Build tee outputs: RTMP + segmented MP4 with strftime filenames
-    tee_outputs = []
-    rtmp_target = RTMP_TARGETS.get(cam_id)
-    if rtmp_target:
-        tee_outputs.append(f"[f=flv]{rtmp_target}")
-    tee_outputs.append(
-        f"[f=segment:segment_time={CHUNK_DURATION}:reset_timestamps=1:strftime=1]{cam_dir}/%Y%m%d_%H%M%S.mp4"
-    )
-    tee_spec = "|".join(tee_outputs)
-
-    # Single long-lived FFmpeg process per camera
-    cmd = [
-        "ffmpeg",
-        "-rtsp_transport", "tcp",
-        "-fflags", "+genpts",
-        "-rtbufsize", "256M",
-        "-use_wallclock_as_timestamps", "1",
-        "-i", rtsp_url,
-        "-map", "0",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-ar", "44100",
-        "-b:a", "128k",
-        "-f", "tee",
-        tee_spec,
-    ]
-
     while True:
-        start_time = time.time()
-        print(f"[REC] {cam_id} → tee to RTMP + {CHUNK_DURATION}s segments")
+        ts = int(time.time())
 
-        # Limit concurrent RTSP handshakes; cameras often reject simultaneous DESCRIBE
-        with HANDSHAKE_LIMIT:
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+        temp_file = cam_dir / f"{cam_id}_{ts}.mp4.part"
+        final_file = cam_dir / f"{cam_id}_{ts}.mp4"
 
-        elapsed = time.time() - start_time
+        cmd = [
+            "ffmpeg",
+            "-rtsp_transport", "tcp",
+            "-fflags", "+genpts",
+            "-i", rtsp_url,
+            "-t", str(CHUNK_DURATION),
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-f", "mp4",
+            "-y",
+            str(temp_file)
+        ]
 
-        if result.returncode == 0:
-            print(f"[OK] {cam_id} FFmpeg exited normally after {elapsed:.1f}s (unexpected)")
+        print(f"[REC] {cam_id} → {final_file.name}")
+
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        # Atomic rename
+        if result.returncode == 0 and temp_file.exists():
+            temp_file.rename(final_file)
         else:
-            if result.stderr:
-                error_lines = result.stderr.split('\n')[-8:]
-                print(f"[ERR] {cam_id} FFmpeg error (code {result.returncode}): {' | '.join(error_lines)}")
+            if temp_file.exists():
+                temp_file.unlink()
 
-        # Backoff if FFmpeg exits too early
-        if elapsed < 10:
-            print(f"[WARN] {cam_id} FFmpeg exited early ({elapsed:.1f}s), retrying in {restart_delay}s")
-            time.sleep(restart_delay)
-            restart_delay = min(restart_delay * 2, 30)
-        else:
-            restart_delay = 2
+        time.sleep(1)
 
-# ================= UPLOAD WORKER =================
-def upload_file(file: Path, cam_id: str):
+# ================= UPLOAD SINGLE FILE =================
+def upload_file(cam_id, file):
     try:
-        size_mb = file.stat().st_size / (1024 * 1024)
-        print(f"[UP] {file.name} | size={size_mb:.2f} MB")
+        print(f"[UP] {file.name}")
 
         with open(file, "rb") as f:
             headers = {"X-API-Key": API_KEY}
@@ -113,48 +78,55 @@ def upload_file(file: Path, cam_id: str):
                 files={"file": f},
                 data={"camera_id": cam_id},
                 headers=headers,
-                timeout=30
+                timeout=20
             )
 
         if r.status_code == 200:
             file.unlink()
             print(f"[OK] Uploaded & deleted {file.name}")
+            return True
         else:
             print(f"[WARN] Upload failed ({r.status_code}) | {file.name}")
+            return False
 
     except Exception as e:
         print(f"[ERR] Upload error {file.name}: {e}")
+        return False
 
 # ================= PARALLEL UPLOADER =================
 def uploader():
-    executor = ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS)
+    with ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS) as executor:
+        while True:
+            futures = []
 
-    while True:
-        tasks = []
-        now = time.time()
+            for cam_id in CAMERAS.keys():
+                cam_dir = Path(BASE_DIR) / cam_id
+                if not cam_dir.exists():
+                    continue
 
-        for cam_id in CAMERAS.keys():
-            cam_dir = Path(BASE_DIR) / cam_id
-            if not cam_dir.exists():
-                continue
+                # Only completed files
+                files = sorted(cam_dir.glob("*.mp4"))
 
-            files = [
-                f for f in cam_dir.glob("*.mp4")
-                if now - f.stat().st_mtime >= FILE_STABLE_SECONDS
-            ]
+                for file in files:
+                    futures.append(
+                        executor.submit(upload_file, cam_id, file)
+                    )
 
-            for file in sorted(files):
-                tasks.append(
-                    executor.submit(upload_file, file, cam_id)
-                )
+                    # Prevent unlimited queue growth
+                    if len(futures) >= MAX_UPLOAD_WORKERS:
+                        for f in as_completed(futures):
+                            f.result()
+                        futures.clear()
 
-        for future in as_completed(tasks):
-            future.result()
+            # Wait remaining uploads
+            for f in as_completed(futures):
+                f.result()
 
-        time.sleep(UPLOAD_INTERVAL)
+            time.sleep(UPLOAD_INTERVAL)
 
 # ================= MAIN =================
 def main():
+    # Start recorder threads
     for cam_id, url in CAMERAS.items():
         threading.Thread(
             target=record_camera,
@@ -162,15 +134,13 @@ def main():
             daemon=True
         ).start()
 
-        # Stagger RTSP connection attempts so cameras are not hit at the same moment
-        time.sleep(3)
-
+    # Start uploader thread
     threading.Thread(
         target=uploader,
         daemon=True
     ).start()
 
-    print(f"✅ Time-based Recording + Parallel Uploading started ({MAX_UPLOAD_WORKERS} workers)")
+    print("✅ Recording + Parallel Uploading started")
     while True:
         time.sleep(60)
 
