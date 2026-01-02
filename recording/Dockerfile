@@ -1,16 +1,8 @@
-FROM python:3.12-slim
-
-# Install ffmpeg
-RUN apt-get update && \
-    apt-get install -y ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+FROM ghcr.io/linuxserver/ffmpeg:version-6.1-cli
 
 WORKDIR /app
 
-# Install Python deps
+# Python is already present in this image
 RUN pip install --no-cache-dir requests
-
-# DO NOT COPY any stream file
-# Script will be mounted at runtime
 
 CMD ["python", "/app/stream.py"]
