@@ -10,7 +10,7 @@ WORKDIR /app
 # Install Python deps
 RUN pip install --no-cache-dir requests
 
-# Copy script (will be overridden per container)
-COPY stream.py /app/stream.py
+# DO NOT COPY any stream file
+# Script will be mounted at runtime
 
 CMD ["python", "/app/stream.py"]
