@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  stream7:
+    build: .
+    container_name: stream7
+    restart: always
+    volumes:
+      - ./recording/stream7.py:/app/stream.py:ro
+      - ./chunks:/app/chunks
+    environment:
+      - TZ=Asia/Kolkata
+
+  stream8:
+    build: .
+    container_name: stream8
+    restart: always
+    volumes:
+      - ./recording/stream8.py:/app/stream.py:ro
+      - ./chunks:/app/chunks
+    environment:
+      - TZ=Asia/Kolkata
+  
+  stream9:
+    build: .
+    container_name: stream9
+    restart: always
+    volumes:
+      - ./recording/stream9.py:/app/stream.py:ro
+      - ./chunks:/app/chunks
+    environment:
+      - TZ=Asia/Kolkata
+    
+  stream10:
+    build: .
+    container_name: stream10
+    restart: always
+    volumes:
+      - ./recording/stream10.py:/app/stream.py:ro
+      - ./chunks:/app/chunks
+    environment:
+      - TZ=Asia/Kolkata 
+
