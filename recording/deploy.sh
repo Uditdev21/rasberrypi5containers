@@ -4,11 +4,11 @@ set -e
 echo "🛑 Stopping containers..."
 docker compose down
 
-echo "🧹 Cleaning old images..."
-docker image prune -f
+echo "🧱 Building image once..."
+docker build -t camera-recorder:latest .
 
-echo "🚀 Building & starting containers..."
-docker compose up -d --build
+echo "🚀 Starting containers..."
+docker compose up -d
 
 echo "✅ Active containers:"
 docker compose ps
