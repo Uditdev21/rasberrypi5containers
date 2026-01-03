@@ -7,7 +7,7 @@ services:
       - STREAM_NAME=stream7
       - TZ=Asia/Kolkata
     volumes:
-      - ./recording/stream7.py:/app/stream.py:ro
+      - ./stream7.py:/app/stream.py:ro
       - ./chunks:/app/chunks
 
   stream8:
@@ -18,7 +18,7 @@ services:
       - STREAM_NAME=stream8
       - TZ=Asia/Kolkata
     volumes:
-      - ./recording/stream8.py:/app/stream.py:ro
+      - ./stream8.py:/app/stream.py:ro
       - ./chunks:/app/chunks
 
   stream9:
@@ -29,7 +29,7 @@ services:
       - STREAM_NAME=stream9
       - TZ=Asia/Kolkata
     volumes:
-      - ./recording/stream9.py:/app/stream.py:ro
+      - ./stream9.py:/app/stream.py:ro
       - ./chunks:/app/chunks
 
   stream10:
@@ -40,5 +40,5 @@ services:
       - STREAM_NAME=stream10
       - TZ=Asia/Kolkata
     volumes:
-      - ./recording/stream10.py:/app/stream.py:ro
+      - ./stream10.py:/app/stream.py:ro
       - ./chunks:/app/chunks
