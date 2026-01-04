@@ -129,13 +129,6 @@ def upload_file(file: Path):
 def uploader():
     with ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS) as executor:
         while True:
-
-            # ✅ CHECK INTERNET FIRST
-            if not internet_available():
-                logger.warning("[NET] Internet not available, upload paused")
-                time.sleep(10)
-                continue
-
             files = sorted(STREAM_DIR.glob("*.mp4"))
 
             if not files:
@@ -156,16 +149,6 @@ def uploader():
                 f.result()
 
             time.sleep(UPLOAD_INTERVAL)
-
-
-def internet_available(timeout=3):
-    try:
-        requests.head("https://www.google.com", timeout=timeout)
-        return True
-    except requests.RequestException:
-        return False
-
-
 
 
 # ================= MAIN =================
