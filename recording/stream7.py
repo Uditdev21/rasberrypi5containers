@@ -10,12 +10,15 @@ BASE_DIR = "chunks"
 # ==========================================
 
 # 🔥 Stream name = this file's name (without .py)
+# STREAM_NAME = Path(__file__).stem
+import os
+from pathlib import Path
+
 STREAM_NAME = Path(__file__).stem
 
 Path(BASE_DIR).mkdir(exist_ok=True)
 STREAM_DIR = Path(BASE_DIR) / STREAM_NAME
 STREAM_DIR.mkdir(parents=True, exist_ok=True)
-
 
 def record_stream():
     print(f"🎥 Recording started for stream: {STREAM_NAME}")
