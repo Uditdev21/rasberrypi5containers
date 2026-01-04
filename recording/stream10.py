@@ -107,7 +107,7 @@ def upload_file(file: Path):
                 files={"file": f},
                 data={"camera_id": STREAM_NAME},
                 headers=headers,
-                timeout=(10, 180)
+                timeout=(20, 500)
             )
 
         if r.status_code == 200:
