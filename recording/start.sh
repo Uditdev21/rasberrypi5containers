@@ -6,7 +6,7 @@ SERVICES=(
   cam-recorder-1
   cam-recorder-2
   cam-recorder-3
-  cam-recorder-4
+#   cam-recorder-4
 )
 
 echo "🔄 Reloading systemd daemon..."
