@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ================= CONFIG =================
 RTSP_URL = "rtsp://192.168.1.160:554/live/0/MAIN"
-CHUNK_DURATION = 60  # seconds
+CHUNK_DURATION = 20 # seconds
 BASE_DIR = "chunks"
 LOG_DIR = "logs"
 
