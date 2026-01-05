@@ -46,11 +46,7 @@ logger = logging.getLogger(STREAM_NAME)
 
 # ================= RECORDING =================
 def record_stream():
-    """
-    ONE long-running FFmpeg process.
-    Segment muxer (no restarts every minute).
-    """
-
+    import random
     delay = random.uniform(2, 6)
     logger.info(f"⏳ Startup delay {delay:.1f}s to avoid sync storms")
     time.sleep(delay)
@@ -60,36 +56,35 @@ def record_stream():
     output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mp4.part"
 
     cmd = [
-    "ffmpeg",
-    "-hide_banner",
-    "-loglevel", "error",
-    "-rtsp_transport", "tcp",
-    "-fflags", "+genpts",
-    "-i", RTSP_URL,
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "error",
 
-    "-map", "0:v:0",
-    "-map", "0:a:0?",
-    "-c:v", "copy",
-    "-c:a", "aac",
-    "-ar", "8000",
+        "-rtsp_transport", "tcp",
+        "-fflags", "+genpts",
+        "-i", RTSP_URL,
 
-    "-f", "segment",
-    "-segment_time", str(CHUNK_DURATION),
-    "-reset_timestamps", "1",
-    "-segment_format", "mp4",
-    "-y",
-    str(output_pattern),
+        # ✅ VIDEO ONLY (audio removed)
+        "-map", "0:v:0",
+        "-c:v", "copy",
+
+        # ✅ WALL-CLOCK SEGMENTING (Option B)
+        "-f", "segment",
+        "-segment_time", str(CHUNK_DURATION),
+        "-segment_atclocktime", "1",
+        "-reset_timestamps", "1",
+        "-segment_format", "mp4",
+
+        "-y",
+        str(output_pattern),
     ]
-
-
 
     while True:
         logger.info("▶️ FFmpeg launched")
         proc = subprocess.Popen(cmd)
         ret = proc.wait()
         logger.error(f"❌ FFmpeg exited unexpectedly (code={ret})")
-        time.sleep(10)  # backoff before restart
-
+        time.sleep(10)
 
 # ================= FILE FINALIZER =================
 def finalize_segments():
