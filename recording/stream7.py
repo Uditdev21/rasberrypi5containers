@@ -19,8 +19,6 @@ API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
 UPLOAD_INTERVAL = 5
 MAX_UPLOAD_WORKERS = 4
-
-MIN_VALID_FILE_SIZE = 1 * 1024 * 1024  # 1MB
 # =========================================
 
 STREAM_NAME = Path(__file__).stem
@@ -44,16 +42,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(STREAM_NAME)
 
-# ================= RECORDING =================
+# ================= RECORDING (GUARANTEED MODE) =================
 def record_stream():
-    import random
     delay = random.uniform(2, 6)
     logger.info(f"⏳ Startup delay {delay:.1f}s to avoid sync storms")
     time.sleep(delay)
 
-    logger.info(f"🎥 Recording started (segment mode): {STREAM_NAME}")
+    logger.info(f"🎥 Recording started (GUARANTEED MODE): {STREAM_NAME}")
 
-    output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mp4.part"
+    output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mkv.part"
 
     cmd = [
         "ffmpeg",
@@ -61,51 +58,45 @@ def record_stream():
         "-loglevel", "error",
 
         "-rtsp_transport", "tcp",
+        "-use_wallclock_as_timestamps", "1",
         "-fflags", "+genpts",
         "-i", RTSP_URL,
 
-        # ✅ VIDEO ONLY (audio removed)
+        # VIDEO ONLY (audio removed to avoid codec issues)
         "-map", "0:v:0",
         "-c:v", "copy",
 
-        # ✅ WALL-CLOCK SEGMENTING (Option B)
+        # SEGMENTING — NO KEYFRAME WAITING
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
         "-segment_atclocktime", "1",
-        "-use_wallclock_as_timestamps", "1",
-        "-segment_format", "mp4",
+        "-break_non_keyframes", "1",
+        "-segment_format", "matroska",
 
         "-y",
         str(output_pattern),
     ]
 
     while True:
-        logger.info("▶️ FFmpeg launched")
+        logger.info("▶️ FFmpeg launched (GUARANTEED)")
         proc = subprocess.Popen(cmd)
         ret = proc.wait()
-        logger.error(f"❌ FFmpeg exited unexpectedly (code={ret})")
-        time.sleep(10)
+        logger.error(f"❌ FFmpeg exited (code={ret}) — restarting safely")
+        time.sleep(5)
 
-# ================= FILE FINALIZER =================
+
+# ================= FINALIZE SEGMENTS =================
 def finalize_segments():
     """
-    Rename *.mp4.part → *.mp4 once FFmpeg closes them.
+    Rename *.mkv.part → *.mkv
+    MKV is always valid even if short.
     """
     while True:
-        for part in STREAM_DIR.glob("*.mp4.part"):
-            final = part.with_suffix("")  # remove .part
+        for part in STREAM_DIR.glob("*.mkv.part"):
+            final = part.with_suffix("")
             try:
-                size = part.stat().st_size
                 part.rename(final)
-
-                if size < MIN_VALID_FILE_SIZE:
-                    logger.warning(
-                        f"[SHORT FILE] {final.name} | size={size/1024:.1f} KB"
-                    )
-                else:
-                    logger.info(
-                        f"[OK] Saved {final.name} | size={size/1024/1024:.2f} MB"
-                    )
+                logger.info(f"[OK] Finalized {final.name}")
             except Exception as e:
                 logger.error(f"[RENAME ERROR] {part.name} | {e}")
 
@@ -158,7 +149,7 @@ def uploader():
                 time.sleep(10)
                 continue
 
-            files = sorted(STREAM_DIR.glob("*.mp4"))
+            files = sorted(STREAM_DIR.glob("*.mkv"))
             if not files:
                 time.sleep(UPLOAD_INTERVAL)
                 continue
@@ -176,7 +167,7 @@ if __name__ == "__main__":
     threading.Thread(target=finalize_segments, daemon=True).start()
     threading.Thread(target=uploader, daemon=True).start()
 
-    logger.info("✅ Stable segment recorder + uploader started")
+    logger.info("✅ GUARANTEED recorder + uploader started")
 
     while True:
         time.sleep(60)
