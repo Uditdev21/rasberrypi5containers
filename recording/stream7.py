@@ -6,12 +6,11 @@ import logging
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
-import signal
-import sys
 
 # ================= CONFIG =================
 RTSP_URL = "rtsp://192.168.1.160:554/live/0/MAIN"
 CHUNK_DURATION = 60  # seconds
+
 BASE_DIR = "chunks"
 LOG_DIR = "logs"
 
@@ -38,26 +37,27 @@ LOG_FILE = Path(LOG_DIR) / f"{STREAM_NAME}.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler(),
+    ],
 )
 logger = logging.getLogger(STREAM_NAME)
 
 # ================= RECORDING =================
 def record_stream():
     """
-    ONE FFmpeg process.
-    Uses segment muxer.
-    NEVER respawns unless FFmpeg truly dies.
+    ONE long-running FFmpeg process.
+    Segment muxer (no restarts every minute).
     """
 
-    # 🔹 Desync startup across cameras
     delay = random.uniform(2, 6)
     logger.info(f"⏳ Startup delay {delay:.1f}s to avoid sync storms")
     time.sleep(delay)
 
     logger.info(f"🎥 Recording started (segment mode): {STREAM_NAME}")
 
-    output_pattern = STREAM_DIR / f"{STREAM_NAME}_%s.mp4.part"
+    output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mp4.part"
 
     cmd = [
         "ffmpeg",
@@ -71,7 +71,6 @@ def record_stream():
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
         "-reset_timestamps", "1",
-        "-strftime", "1",
         "-segment_format", "mp4",
         "-y",
         str(output_pattern),
@@ -80,19 +79,15 @@ def record_stream():
     while True:
         logger.info("▶️ FFmpeg launched")
         proc = subprocess.Popen(cmd)
-
         ret = proc.wait()
         logger.error(f"❌ FFmpeg exited unexpectedly (code={ret})")
-
-        # Backoff before restart
-        time.sleep(10)
+        time.sleep(10)  # backoff before restart
 
 
 # ================= FILE FINALIZER =================
 def finalize_segments():
     """
-    Renames *.mp4.part → *.mp4
-    Ensures uploader only sees complete files.
+    Rename *.mp4.part → *.mp4 once FFmpeg closes them.
     """
     while True:
         for part in STREAM_DIR.glob("*.mp4.part"):
