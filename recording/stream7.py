@@ -72,7 +72,7 @@ def record_stream():
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
         "-segment_atclocktime", "1",
-        "-reset_timestamps", "1",
+        "-use_wallclock_as_timestamps", "1",
         "-segment_format", "mp4",
 
         "-y",
