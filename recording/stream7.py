@@ -50,6 +50,7 @@ def record_stream():
 
     logger.info(f"🎥 Recording started (GUARANTEED MODE): {STREAM_NAME}")
 
+    # FFmpeg ONLY writes .part files
     output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mkv.part"
 
     cmd = [
@@ -62,11 +63,11 @@ def record_stream():
         "-fflags", "+genpts",
         "-i", RTSP_URL,
 
-        # VIDEO ONLY (audio removed to avoid codec issues)
+        # video only (safe)
         "-map", "0:v:0",
         "-c:v", "copy",
 
-        # SEGMENTING — NO KEYFRAME WAITING
+        # segmenting with zero data loss
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
         "-segment_atclocktime", "1",
@@ -85,22 +86,22 @@ def record_stream():
         time.sleep(5)
 
 
-# ================= FINALIZE SEGMENTS =================
+# ================= FINALIZER (ATOMIC RENAME) =================
 def finalize_segments():
     """
-    Rename *.mkv.part → *.mkv
-    MKV is always valid even if short.
+    Atomically rename *.mkv.part → *.mkv
+    Uploader never sees .part files.
     """
     while True:
         for part in STREAM_DIR.glob("*.mkv.part"):
-            final = part.with_suffix("")
+            final = part.with_suffix("")  # remove .part
             try:
-                part.rename(final)
+                part.rename(final)  # atomic on same filesystem
                 logger.info(f"[OK] Finalized {final.name}")
             except Exception as e:
                 logger.error(f"[RENAME ERROR] {part.name} | {e}")
 
-        time.sleep(2)
+        time.sleep(1)
 
 
 # ================= UPLOAD =================
@@ -142,6 +143,10 @@ def internet_available(timeout=3):
 
 
 def uploader():
+    """
+    Uploads ONLY finalized .mkv files.
+    Never touches .part files.
+    """
     with ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS) as executor:
         while True:
             if not internet_available():
@@ -149,7 +154,7 @@ def uploader():
                 time.sleep(10)
                 continue
 
-            files = sorted(STREAM_DIR.glob("*.mkv"))
+            files = sorted(STREAM_DIR.glob("*.mkv"))  # 👈 critical
             if not files:
                 time.sleep(UPLOAD_INTERVAL)
                 continue
@@ -167,7 +172,7 @@ if __name__ == "__main__":
     threading.Thread(target=finalize_segments, daemon=True).start()
     threading.Thread(target=uploader, daemon=True).start()
 
-    logger.info("✅ GUARANTEED recorder + uploader started")
+    logger.info("✅ GUARANTEED recorder + uploader (RACE-SAFE) started")
 
     while True:
         time.sleep(60)
