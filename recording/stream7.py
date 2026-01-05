@@ -60,27 +60,27 @@ def record_stream():
     output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mp4.part"
 
     cmd = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel", "error",
-        "-rtsp_transport", "tcp",
-        "-fflags", "+genpts",
-        "-i", RTSP_URL,
+    "ffmpeg",
+    "-hide_banner",
+    "-loglevel", "error",
+    "-rtsp_transport", "tcp",
+    "-fflags", "+genpts",
+    "-i", RTSP_URL,
 
-    # ✅ Explicit mapping
-        "-map", "0:v:0?",
-        "-map", "0:a:0?",
+    "-map", "0:v:0",
+    "-map", "0:a:0?",
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-ar", "8000",
 
-    # ✅ Copy everything if present
-        "-c", "copy",
-
-        "-f", "segment",
-        "-segment_time", str(CHUNK_DURATION),
-        "-reset_timestamps", "1",
-        "-segment_format", "mp4",
-        "-y",
-        str(output_pattern),
+    "-f", "segment",
+    "-segment_time", str(CHUNK_DURATION),
+    "-reset_timestamps", "1",
+    "-segment_format", "mp4",
+    "-y",
+    str(output_pattern),
     ]
+
 
 
     while True:
