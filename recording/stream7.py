@@ -66,8 +66,14 @@ def record_stream():
         "-rtsp_transport", "tcp",
         "-fflags", "+genpts",
         "-i", RTSP_URL,
-        "-c:v", "copy",
-        "-c:a", "aac",
+
+    # ✅ Explicit mapping
+        "-map", "0:v:0?",
+        "-map", "0:a:0?",
+
+    # ✅ Copy everything if present
+        "-c", "copy",
+
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
         "-reset_timestamps", "1",
@@ -75,6 +81,7 @@ def record_stream():
         "-y",
         str(output_pattern),
     ]
+
 
     while True:
         logger.info("▶️ FFmpeg launched")
