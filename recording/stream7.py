@@ -19,6 +19,8 @@ API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
 UPLOAD_INTERVAL = 5
 MAX_UPLOAD_WORKERS = 4
+
+STABLE_SECONDS = 3   # file must not grow for N seconds
 # =========================================
 
 STREAM_NAME = Path(__file__).stem
@@ -42,7 +44,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(STREAM_NAME)
 
-# ================= RECORDING (GUARANTEED MODE) =================
+# ================= RECORDING =================
 def record_stream():
     delay = random.uniform(2, 6)
     logger.info(f"⏳ Startup delay {delay:.1f}s to avoid sync storms")
@@ -50,8 +52,7 @@ def record_stream():
 
     logger.info(f"🎥 Recording started (GUARANTEED MODE): {STREAM_NAME}")
 
-    # FFmpeg ONLY writes .part files
-    output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mkv.part"
+    output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mkv"
 
     cmd = [
         "ffmpeg",
@@ -67,7 +68,7 @@ def record_stream():
         "-map", "0:v:0",
         "-c:v", "copy",
 
-        # segmenting with zero data loss
+        # segmenting (no data loss)
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
         "-segment_atclocktime", "1",
@@ -79,30 +80,24 @@ def record_stream():
     ]
 
     while True:
-        logger.info("▶️ FFmpeg launched (GUARANTEED)")
+        logger.info("▶️ FFmpeg launched")
         proc = subprocess.Popen(cmd)
         ret = proc.wait()
         logger.error(f"❌ FFmpeg exited (code={ret}) — restarting safely")
         time.sleep(5)
 
-
-# ================= FINALIZER (ATOMIC RENAME) =================
-def finalize_segments():
+# ================= FILE STABILITY CHECK =================
+def is_file_stable(path: Path, stable_seconds=STABLE_SECONDS):
     """
-    Atomically rename *.mkv.part → *.mkv
-    Uploader never sees .part files.
+    A file is safe if its size does not change for `stable_seconds`.
     """
-    while True:
-        for part in STREAM_DIR.glob("*.mkv.part"):
-            final = part.with_suffix("")  # remove .part
-            try:
-                part.rename(final)  # atomic on same filesystem
-                logger.info(f"[OK] Finalized {final.name}")
-            except Exception as e:
-                logger.error(f"[RENAME ERROR] {part.name} | {e}")
-
-        time.sleep(1)
-
+    try:
+        size1 = path.stat().st_size
+        time.sleep(stable_seconds)
+        size2 = path.stat().st_size
+        return size1 == size2
+    except FileNotFoundError:
+        return False
 
 # ================= UPLOAD =================
 def upload_file(file: Path):
@@ -133,7 +128,6 @@ def upload_file(file: Path):
         logger.error(f"[UPLOAD ERROR] {file.name} | {e}")
         return False
 
-
 def internet_available(timeout=3):
     try:
         requests.head("https://www.google.com", timeout=timeout)
@@ -141,11 +135,9 @@ def internet_available(timeout=3):
     except requests.RequestException:
         return False
 
-
 def uploader():
     """
-    Uploads ONLY finalized .mkv files.
-    Never touches .part files.
+    Uploads ONLY files that are no longer growing.
     """
     with ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS) as executor:
         while True:
@@ -154,25 +146,29 @@ def uploader():
                 time.sleep(10)
                 continue
 
-            files = sorted(STREAM_DIR.glob("*.mkv"))  # 👈 critical
-            if not files:
+            files = sorted(STREAM_DIR.glob("*.mkv"))
+            ready = []
+
+            for f in files:
+                if is_file_stable(f):
+                    ready.append(f)
+
+            if not ready:
                 time.sleep(UPLOAD_INTERVAL)
                 continue
 
-            futures = [executor.submit(upload_file, f) for f in files]
+            futures = [executor.submit(upload_file, f) for f in ready]
             for f in as_completed(futures):
                 f.result()
 
             time.sleep(UPLOAD_INTERVAL)
 
-
 # ================= MAIN =================
 if __name__ == "__main__":
     threading.Thread(target=record_stream, daemon=True).start()
-    threading.Thread(target=finalize_segments, daemon=True).start()
     threading.Thread(target=uploader, daemon=True).start()
 
-    logger.info("✅ GUARANTEED recorder + uploader (RACE-SAFE) started")
+    logger.info("✅ GUARANTEED recorder + race-safe uploader started")
 
     while True:
         time.sleep(60)
