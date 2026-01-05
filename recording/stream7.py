@@ -131,6 +131,14 @@ def upload_file(file: Path):
         logger.error(f"[UPLOAD ERROR] {file.name} | {e}")
         return False
 
+
+def internet_available(timeout=3):
+    try:
+        requests.head("https://www.google.com", timeout=timeout)
+        return True
+    except requests.RequestException:
+        return False
+
 def uploader():
     """
     Uploads ONLY files that are no longer growing.
