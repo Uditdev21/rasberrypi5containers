@@ -15,12 +15,11 @@ BASE_DIR = "chunks"
 LOG_DIR = "logs"
 
 UPLOAD_URL = "https://diseaseai.agrikheti.com/upload"
-API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
+API_KEY = "65133d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
 UPLOAD_INTERVAL = 5
 MAX_UPLOAD_WORKERS = 4
-
-STABLE_SECONDS = 3   # file must not grow for N seconds
+STABLE_SECONDS = 3
 # =========================================
 
 STREAM_NAME = Path(__file__).stem
@@ -64,11 +63,11 @@ def record_stream():
         "-fflags", "+genpts",
         "-i", RTSP_URL,
 
-        # video only (safe)
+        # Video only (safe)
         "-map", "0:v:0",
         "-c:v", "copy",
 
-        # segmenting (no data loss)
+        # Segmenting (no data loss)
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
         "-segment_atclocktime", "1",
@@ -88,9 +87,6 @@ def record_stream():
 
 # ================= FILE STABILITY CHECK =================
 def is_file_stable(path: Path, stable_seconds=STABLE_SECONDS):
-    """
-    A file is safe if its size does not change for `stable_seconds`.
-    """
     try:
         size1 = path.stat().st_size
         time.sleep(stable_seconds)
@@ -99,13 +95,38 @@ def is_file_stable(path: Path, stable_seconds=STABLE_SECONDS):
     except FileNotFoundError:
         return False
 
+# ================= VIDEO DURATION =================
+def get_video_duration(path: Path):
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return None
+
 # ================= UPLOAD =================
 def upload_file(file: Path):
     try:
         size_bytes = file.stat().st_size
         size_mb = size_bytes / 1024 / 1024
 
-        logger.info(f"[UP] {file.name} | size={size_mb:.2f} MB")
+        duration = get_video_duration(file)
+        duration_str = f"{duration:.1f}s" if duration else "unknown"
+
+        logger.info(
+            f"[UP] {file.name} | size={size_mb:.2f} MB | duration={duration_str}"
+        )
 
         with open(file, "rb") as f:
             headers = {"X-API-Key": API_KEY}
@@ -131,7 +152,6 @@ def upload_file(file: Path):
         logger.error(f"[UPLOAD ERROR] {file.name} | {e}")
         return False
 
-
 def internet_available(timeout=3):
     try:
         requests.head("https://www.google.com", timeout=timeout)
@@ -140,9 +160,6 @@ def internet_available(timeout=3):
         return False
 
 def uploader():
-    """
-    Uploads ONLY files that are no longer growing.
-    """
     with ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS) as executor:
         while True:
             if not internet_available():
