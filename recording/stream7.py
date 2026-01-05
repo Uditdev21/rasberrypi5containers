@@ -102,7 +102,10 @@ def is_file_stable(path: Path, stable_seconds=STABLE_SECONDS):
 # ================= UPLOAD =================
 def upload_file(file: Path):
     try:
-        logger.info(f"[UP] {file.name}")
+        size_bytes = file.stat().st_size
+        size_mb = size_bytes / 1024 / 1024
+
+        logger.info(f"[UP] {file.name} | size={size_mb:.2f} MB")
 
         with open(file, "rb") as f:
             headers = {"X-API-Key": API_KEY}
@@ -126,13 +129,6 @@ def upload_file(file: Path):
 
     except Exception as e:
         logger.error(f"[UPLOAD ERROR] {file.name} | {e}")
-        return False
-
-def internet_available(timeout=3):
-    try:
-        requests.head("https://www.google.com", timeout=timeout)
-        return True
-    except requests.RequestException:
         return False
 
 def uploader():
