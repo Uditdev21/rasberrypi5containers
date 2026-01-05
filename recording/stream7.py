@@ -54,28 +54,27 @@ def record_stream():
     output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mkv"
 
     cmd = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel", "error",
+    "ffmpeg",
+    "-hide_banner",
+    "-loglevel", "error",
 
-        "-rtsp_transport", "tcp",
-        "-use_wallclock_as_timestamps", "1",
-        "-fflags", "+genpts",
-        "-i", RTSP_URL,
+    "-rtsp_transport", "tcp",
+    "-fflags", "nobuffer",
+    "-flags", "low_delay",
+    "-i", RTSP_URL,
 
-        # Video only (safe)
-        "-map", "0:v:0",
-        "-c:v", "copy",
+    # Video only
+    "-map", "0:v:0",
+    "-c:v", "copy",
 
-        # Segmenting (no data loss)
-        "-f", "segment",
-        "-segment_time", str(CHUNK_DURATION),
-        "-segment_atclocktime", "1",
-        "-break_non_keyframes", "1",
-        "-segment_format", "matroska",
+    # PURE DURATION SEGMENTING (STABLE)
+    "-f", "segment",
+    "-segment_time", str(CHUNK_DURATION),
+    "-break_non_keyframes", "1",
+    "-segment_format", "matroska",
 
-        "-y",
-        str(output_pattern),
+    "-y",
+    str(output_pattern),
     ]
 
     while True:
