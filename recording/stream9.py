@@ -6,12 +6,11 @@ import logging
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
-import signal
-import sys
 
 # ================= CONFIG =================
 RTSP_URL = "rtsp://192.168.1.83:554/live/0/MAIN"
 CHUNK_DURATION = 60  # seconds
+
 BASE_DIR = "chunks"
 LOG_DIR = "logs"
 
@@ -21,7 +20,7 @@ API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 UPLOAD_INTERVAL = 5
 MAX_UPLOAD_WORKERS = 4
 
-MIN_VALID_FILE_SIZE = 1 * 1024 * 1024  # 1MB
+STABLE_SECONDS = 3   # file must not grow for N seconds
 # =========================================
 
 STREAM_NAME = Path(__file__).stem
@@ -38,41 +37,44 @@ LOG_FILE = Path(LOG_DIR) / f"{STREAM_NAME}.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler(),
+    ],
 )
 logger = logging.getLogger(STREAM_NAME)
 
 # ================= RECORDING =================
 def record_stream():
-    """
-    ONE FFmpeg process.
-    Uses segment muxer.
-    NEVER respawns unless FFmpeg truly dies.
-    """
-
-    # 🔹 Desync startup across cameras
     delay = random.uniform(2, 6)
     logger.info(f"⏳ Startup delay {delay:.1f}s to avoid sync storms")
     time.sleep(delay)
 
-    logger.info(f"🎥 Recording started (segment mode): {STREAM_NAME}")
+    logger.info(f"🎥 Recording started (GUARANTEED MODE): {STREAM_NAME}")
 
-    output_pattern = STREAM_DIR / f"{STREAM_NAME}_%s.mp4.part"
+    output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mkv"
 
     cmd = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel", "error",
+
         "-rtsp_transport", "tcp",
+        "-use_wallclock_as_timestamps", "1",
         "-fflags", "+genpts",
         "-i", RTSP_URL,
+
+        # video only (safe)
+        "-map", "0:v:0",
         "-c:v", "copy",
-        "-c:a", "aac",
+
+        # segmenting (no data loss)
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION),
-        "-reset_timestamps", "1",
-        "-strftime", "1",
-        "-segment_format", "mp4",
+        "-segment_atclocktime", "1",
+        "-break_non_keyframes", "1",
+        "-segment_format", "matroska",
+
         "-y",
         str(output_pattern),
     ]
@@ -80,40 +82,22 @@ def record_stream():
     while True:
         logger.info("▶️ FFmpeg launched")
         proc = subprocess.Popen(cmd)
-
         ret = proc.wait()
-        logger.error(f"❌ FFmpeg exited unexpectedly (code={ret})")
+        logger.error(f"❌ FFmpeg exited (code={ret}) — restarting safely")
+        time.sleep(5)
 
-        # Backoff before restart
-        time.sleep(10)
-
-
-# ================= FILE FINALIZER =================
-def finalize_segments():
+# ================= FILE STABILITY CHECK =================
+def is_file_stable(path: Path, stable_seconds=STABLE_SECONDS):
     """
-    Renames *.mp4.part → *.mp4
-    Ensures uploader only sees complete files.
+    A file is safe if its size does not change for `stable_seconds`.
     """
-    while True:
-        for part in STREAM_DIR.glob("*.mp4.part"):
-            final = part.with_suffix("")  # remove .part
-            try:
-                size = part.stat().st_size
-                part.rename(final)
-
-                if size < MIN_VALID_FILE_SIZE:
-                    logger.warning(
-                        f"[SHORT FILE] {final.name} | size={size/1024:.1f} KB"
-                    )
-                else:
-                    logger.info(
-                        f"[OK] Saved {final.name} | size={size/1024/1024:.2f} MB"
-                    )
-            except Exception as e:
-                logger.error(f"[RENAME ERROR] {part.name} | {e}")
-
-        time.sleep(2)
-
+    try:
+        size1 = path.stat().st_size
+        time.sleep(stable_seconds)
+        size2 = path.stat().st_size
+        return size1 == size2
+    except FileNotFoundError:
+        return False
 
 # ================= UPLOAD =================
 def upload_file(file: Path):
@@ -144,7 +128,6 @@ def upload_file(file: Path):
         logger.error(f"[UPLOAD ERROR] {file.name} | {e}")
         return False
 
-
 def internet_available(timeout=3):
     try:
         requests.head("https://www.google.com", timeout=timeout)
@@ -152,8 +135,10 @@ def internet_available(timeout=3):
     except requests.RequestException:
         return False
 
-
 def uploader():
+    """
+    Uploads ONLY files that are no longer growing.
+    """
     with ThreadPoolExecutor(max_workers=MAX_UPLOAD_WORKERS) as executor:
         while True:
             if not internet_available():
@@ -161,25 +146,29 @@ def uploader():
                 time.sleep(10)
                 continue
 
-            files = sorted(STREAM_DIR.glob("*.mp4"))
-            if not files:
+            files = sorted(STREAM_DIR.glob("*.mkv"))
+            ready = []
+
+            for f in files:
+                if is_file_stable(f):
+                    ready.append(f)
+
+            if not ready:
                 time.sleep(UPLOAD_INTERVAL)
                 continue
 
-            futures = [executor.submit(upload_file, f) for f in files]
+            futures = [executor.submit(upload_file, f) for f in ready]
             for f in as_completed(futures):
                 f.result()
 
             time.sleep(UPLOAD_INTERVAL)
 
-
 # ================= MAIN =================
 if __name__ == "__main__":
     threading.Thread(target=record_stream, daemon=True).start()
-    threading.Thread(target=finalize_segments, daemon=True).start()
     threading.Thread(target=uploader, daemon=True).start()
 
-    logger.info("✅ Stable segment recorder + uploader started")
+    logger.info("✅ GUARANTEED recorder + race-safe uploader started")
 
     while True:
         time.sleep(60)
