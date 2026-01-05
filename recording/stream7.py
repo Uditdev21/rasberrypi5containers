@@ -19,7 +19,9 @@ API_KEY = "6513d871943f3acaf3ef2dee663980bb2087ef2a0a1f9028367906c8d1ffe375"
 
 UPLOAD_INTERVAL = 5
 MAX_UPLOAD_WORKERS = 4
+
 STABLE_SECONDS = 3
+MIN_UPLOAD_SIZE = 300 * 1024  # 300 KB → skip empty / heartbeat MKV files
 # =========================================
 
 STREAM_NAME = Path(__file__).stem
@@ -49,39 +51,39 @@ def record_stream():
     logger.info(f"⏳ Startup delay {delay:.1f}s to avoid sync storms")
     time.sleep(delay)
 
-    logger.info(f"🎥 Recording started (GUARANTEED MODE): {STREAM_NAME}")
+    logger.info(f"🎥 Recording started (STABLE RTSP MODE): {STREAM_NAME}")
 
     output_pattern = STREAM_DIR / f"{STREAM_NAME}_%05d.mkv"
 
     cmd = [
-    "ffmpeg",
-    "-hide_banner",
-    "-loglevel", "error",
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "error",
 
-    "-rtsp_transport", "tcp",
-    "-fflags", "nobuffer",
-    "-flags", "low_delay",
-    "-i", RTSP_URL,
+        "-rtsp_transport", "tcp",
+        "-fflags", "nobuffer",
+        "-flags", "low_delay",
+        "-i", RTSP_URL,
 
-    # Video only
-    "-map", "0:v:0",
-    "-c:v", "copy",
+        # Video only (avoid audio/container issues)
+        "-map", "0:v:0",
+        "-c:v", "copy",
 
-    # PURE DURATION SEGMENTING (STABLE)
-    "-f", "segment",
-    "-segment_time", str(CHUNK_DURATION),
-    "-break_non_keyframes", "1",
-    "-segment_format", "matroska",
+        # Stable duration-based segmentation
+        "-f", "segment",
+        "-segment_time", str(CHUNK_DURATION),
+        "-break_non_keyframes", "1",
+        "-segment_format", "matroska",
 
-    "-y",
-    str(output_pattern),
+        "-y",
+        str(output_pattern),
     ]
 
     while True:
         logger.info("▶️ FFmpeg launched")
         proc = subprocess.Popen(cmd)
         ret = proc.wait()
-        logger.error(f"❌ FFmpeg exited (code={ret}) — restarting safely")
+        logger.error(f"❌ FFmpeg exited (code={ret}) — restarting in 5s")
         time.sleep(5)
 
 # ================= FILE STABILITY CHECK =================
@@ -118,8 +120,16 @@ def get_video_duration(path: Path):
 def upload_file(file: Path):
     try:
         size_bytes = file.stat().st_size
-        size_mb = size_bytes / 1024 / 1024
 
+        # 🔒 Skip empty / heartbeat segments
+        if size_bytes < MIN_UPLOAD_SIZE:
+            logger.warning(
+                f"[SKIP] {file.name} | empty/heartbeat segment ({size_bytes/1024:.1f} KB)"
+            )
+            file.unlink()
+            return False
+
+        size_mb = size_bytes / 1024 / 1024
         duration = get_video_duration(file)
         duration_str = f"{duration:.1f}s" if duration else "unknown"
 
@@ -166,9 +176,12 @@ def uploader():
                 time.sleep(10)
                 continue
 
-            files = sorted(STREAM_DIR.glob("*.mkv"))
-            ready = []
+            files = sorted(
+                STREAM_DIR.glob("*.mkv"),
+                key=lambda f: f.stat().st_mtime
+            )
 
+            ready = []
             for f in files:
                 if is_file_stable(f):
                     ready.append(f)
@@ -188,7 +201,7 @@ if __name__ == "__main__":
     threading.Thread(target=record_stream, daemon=True).start()
     threading.Thread(target=uploader, daemon=True).start()
 
-    logger.info("✅ GUARANTEED recorder + race-safe uploader started")
+    logger.info("✅ STABLE RTSP recorder + race-safe uploader started")
 
     while True:
         time.sleep(60)
