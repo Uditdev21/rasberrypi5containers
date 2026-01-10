@@ -9,12 +9,12 @@ services:
     - >
         ffmpeg -rtsp_transport tcp -fflags +genpts -rtbufsize 256M
         -use_wallclock_as_timestamps 1
-        -i rtsp://192.168.1.106:554/live/0/MAIN
+        -i rtsp://admin:Navya_83350@192.168.1.10:554/stream0
         -vf "scale=1280:720"
         -c:v libx264 -preset veryfast -tune zerolatency -profile:v baseline
         -g 50 -keyint_min 50
         -c:a aac -ar 44100 -b:a 128k
-        -f flv rtmp://49.50.74.61:6002/live/stream2
+        -f flv rtmp://49.50.74.61:6002/live/stream1
 
 
   stream2:
